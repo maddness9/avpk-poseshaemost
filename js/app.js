@@ -141,7 +141,32 @@ const App = {
         // Выход
         document.getElementById('logout-btn').onclick = () => this.logout();
         
+        // Мобильное меню (гамбургер)
+        this.initMobileMenu();
+        
         this.navigate('dashboard');
+    },
+    
+    // ----- МОБИЛЬНОЕ МЕНЮ -----
+    initMobileMenu() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        const toggle = document.getElementById('menu-toggle');
+        
+        const open = () => {
+            sidebar.classList.add('open');
+            overlay.classList.add('show');
+        };
+        const close = () => {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('show');
+        };
+        
+        if (toggle) toggle.onclick = open;
+        if (overlay) overlay.onclick = close;
+        
+        // Сохраняем функцию закрытия, чтобы вызывать при переходе на страницу
+        this._closeMobileMenu = close;
     },
     
     async logout() {
@@ -157,6 +182,9 @@ const App = {
     // ----- РОУТИНГ -----
     navigate(page) {
         this.currentPage = page;
+        
+        // Закрываем мобильное меню при переходе
+        if (this._closeMobileMenu) this._closeMobileMenu();
         
         document.querySelectorAll('.nav-item').forEach(item => {
             item.classList.toggle('active', item.dataset.page === page);

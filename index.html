@@ -129,8 +129,10 @@
 <!-- ОСНОВНОЙ ИНТЕРФЕЙС                              -->
 <!-- =============================================== -->
 <div id="app" class="app hidden">
+    <!-- Затемнение фона при открытом меню на мобильных -->
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
     <!-- Боковое меню -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
             <img src="assets/logo.png" alt="АВПК" class="sidebar-logo-img">
             <div>
@@ -181,9 +183,14 @@
     <!-- Основная область контента -->
     <main class="main-content">
         <header class="main-header">
-            <div>
-                <h2 id="page-title">Главная</h2>
-                <div class="header-meta" id="current-date"></div>
+            <div class="header-left">
+                <button id="menu-toggle" class="menu-toggle" aria-label="Меню">
+                    <span></span><span></span><span></span>
+                </button>
+                <div>
+                    <h2 id="page-title">Главная</h2>
+                    <div class="header-meta" id="current-date"></div>
+                </div>
             </div>
         </header>
         

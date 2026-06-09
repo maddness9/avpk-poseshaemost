@@ -1130,31 +1130,172 @@ table tbody tr:last-child td {
 }
 
 /* =====================================================================
+   МОБИЛЬНОЕ МЕНЮ — гамбургер и оверлей
+   ===================================================================== */
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.menu-toggle {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    width: 42px;
+    height: 42px;
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 0 10px;
+    flex-shrink: 0;
+    transition: var(--transition);
+}
+
+.menu-toggle:hover { background: var(--bg-tertiary); }
+
+.menu-toggle span {
+    display: block;
+    height: 2.5px;
+    width: 100%;
+    background: var(--text-primary);
+    border-radius: 2px;
+    transition: var(--transition);
+}
+
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 33, 61, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 998;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.sidebar-overlay.show { display: block; }
+
+/* =====================================================================
    АДАПТИВНОСТЬ
    ===================================================================== */
+/* --- Планшеты (до 1024px) --- */
 @media (max-width: 1024px) {
     .login-screen { grid-template-columns: 1fr; }
     .login-side { display: none; }
-    .app { grid-template-columns: 220px 1fr; }
+    .app { grid-template-columns: 200px 1fr; }
     .main-content { padding: 24px 20px; }
     .dashboard-grid { grid-template-columns: 1fr; }
+    .sidebar { padding: 20px 12px; }
+    .nav-item { padding: 10px 12px; font-size: 13px; }
+    .main-header h2 { font-size: 26px; }
 }
 
+/* --- Мобильные и малые планшеты (до 768px) --- */
 @media (max-width: 768px) {
+    /* Меню превращается в выезжающую панель */
     .app { grid-template-columns: 1fr; }
     .sidebar {
         position: fixed;
+        top: 0;
         left: -100%;
         z-index: 999;
         width: 260px;
-        transition: left 0.3s;
+        height: 100vh;
+        transition: left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        box-shadow: var(--shadow-xl);
     }
     .sidebar.open { left: 0; }
-    .main-header h2 { font-size: 24px; }
-    .lesson-row { grid-template-columns: 50px 1fr; gap: 8px; }
+
+    /* Показываем кнопку-гамбургер */
+    .menu-toggle { display: flex; }
+
+    .main-content { padding: 16px; }
+    .main-header {
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+    }
+    .main-header h2 { font-size: 22px; }
+    .header-meta { font-size: 12px; }
+
+    /* Статистика — в одну колонку шире */
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    .stat-card { padding: 16px; }
+    .stat-value { font-size: 28px; }
+
+    .status-distribution { grid-template-columns: 1fr; }
+
+    /* Фильтры — вертикально */
+    .filters-bar {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 16px;
+    }
+    .filters-bar .form-group { min-width: 0; width: 100%; }
+    .filters-bar button { width: 100%; }
+
+    /* Таблицы — горизонтальная прокрутка вместо вылезания за экран */
+    .table-container { overflow-x: auto; }
+    table { min-width: 560px; }
+    table th, table td { padding: 10px 14px; font-size: 13px; }
+
+    /* Расписание */
+    .lesson-row {
+        grid-template-columns: 44px 1fr;
+        gap: 8px 12px;
+    }
     .lesson-row > *:nth-child(3),
-    .lesson-row > *:nth-child(4) { grid-column: 2; }
-    .attendance-row { grid-template-columns: 1fr; gap: 8px; }
-    .status-selector { width: 100%; justify-content: space-between; }
-    .college-name { font-size: 32px; }
+    .lesson-row > *:nth-child(4) {
+        grid-column: 2;
+        justify-self: start;
+    }
+    .schedule-day-header { padding: 14px 16px; font-size: 16px; }
+    .lesson-number { font-size: 20px; }
+
+    /* Посещаемость — карточки в столбик */
+    .attendance-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    .status-selector {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .status-btn { flex: 1; padding: 8px 6px; font-size: 12px; }
+
+    /* Модалки на всю ширину */
+    .modal { padding: 12px; }
+    .modal-content { max-width: 100%; }
+
+    /* Регистрация */
+    .login-card { padding: 32px 24px; }
+    .login-card-wide { max-width: 100%; }
+
+    /* Тосты не вылезают за край */
+    .toast-container {
+        top: 12px;
+        right: 12px;
+        left: 12px;
+    }
+    .toast { min-width: 0; width: 100%; }
+}
+
+/* --- Маленькие телефоны (до 480px) --- */
+@media (max-width: 480px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    .main-header h2 { font-size: 20px; }
+    .login-card { padding: 24px 18px; }
+    .login-title { font-size: 24px; }
+    .stat-value { font-size: 32px; }
+    .btn-primary, .btn-secondary, .btn-danger, .btn-success {
+        padding: 10px 16px;
+    }
+    .table-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
 }
