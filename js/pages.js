@@ -512,33 +512,96 @@ export const Pages = {
         content.innerHTML = UI.loader();
         
         try {
-            const [students, groups] = await Promise.all([API.getStudents(), API.getGroups()]);
+            const groups = await API.getGroups();
+            window._allGroups = groups;
             
-            const groupOptions = `<option value="">Все группы</option>` +
-                groups.map(g => `<option value="${g.id}">${UI.escapeHtml(g.name)}</option>`).join('');
+            // Список доступных курсов (из реальных групп)
+            const courses = [...new Set(groups.map(g => g.course))].sort((a, b) => a - b);
             
             content.innerHTML = `
                 <div class="filters-bar">
                     <div class="form-group">
-                        <label>Фильтр по группе</label>
-                        <select id="students-filter-group">
-                            ${groupOptions}
+                        <label>Курс</label>
+                        <select id="students-filter-course">
+                            <option value="">— Выберите курс —</option>
+                            ${courses.map(c => `<option value="${c}">${c} курс</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Группа</label>
+                        <select id="students-filter-group" disabled>
+                            <option value="">— Сначала выберите курс —</option>
                         </select>
                     </div>
                     ${App.hasRole('admin') ? 
-                        `<button class="btn-primary" id="add-student-btn">+ Добавить запись студента</button>` : ''}
+                        `<button class="btn-primary" id="add-student-btn">+ Добавить студента</button>` : ''}
                 </div>
-                <div class="info-note">
-                    ℹ Регистрация студентов происходит через форму регистрации. 
-                    Здесь администратор привязывает зарегистрированных пользователей к группам.
+                <div id="students-result">
+                    ${UI.emptyState('Выберите курс и группу', 'Студенты выбранной группы появятся здесь', '⚇')}
                 </div>
+            `;
+            
+            // При выборе курса — заполняем список групп этого курса
+            document.getElementById('students-filter-course').onchange = (e) => {
+                this.fillGroupsForCourse(e.target.value);
+            };
+            // При выборе группы — загружаем её студентов
+            document.getElementById('students-filter-group').onchange = (e) => {
+                this.loadGroupStudents(e.target.value);
+            };
+            
+            const addBtn = document.getElementById('add-student-btn');
+            if (addBtn) addBtn.onclick = () => this.studentModal();
+        } catch (e) {
+            content.innerHTML = UI.emptyState('Ошибка', e.message);
+            console.error(e);
+        }
+    },
+    
+    // Заполнить выпадающий список групп для выбранного курса
+    fillGroupsForCourse(course) {
+        const sel = document.getElementById('students-filter-group');
+        if (!course) {
+            sel.innerHTML = '<option value="">— Сначала выберите курс —</option>';
+            sel.disabled = true;
+            return;
+        }
+        const groups = (window._allGroups || [])
+            .filter(g => String(g.course) === String(course))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        
+        sel.innerHTML = '<option value="">— Выберите группу —</option>' +
+            groups.map(g => `<option value="${g.id}">${UI.escapeHtml(g.name)} (${g.students_count})</option>`).join('');
+        sel.disabled = false;
+    },
+    
+    // Загрузить студентов выбранной группы
+    async loadGroupStudents(groupId) {
+        const result = document.getElementById('students-result');
+        if (!groupId) {
+            result.innerHTML = UI.emptyState('Выберите группу', '', '⚇');
+            return;
+        }
+        result.innerHTML = UI.loader();
+        
+        try {
+            const students = await API.getStudents(groupId);
+            window._currentGroupStudents = students;
+            
+            const group = (window._allGroups || []).find(g => g.id === groupId);
+            const groupName = group ? group.name : '';
+            
+            result.innerHTML = `
                 <div class="table-container">
+                    <div class="table-header">
+                        <h3>Группа ${UI.escapeHtml(groupName)}</h3>
+                        <span style="color:var(--text-muted);">Студентов: ${students.length}</span>
+                    </div>
                     <table>
                         <thead>
                             <tr>
                                 <th>ФИО</th>
                                 <th>№ билета</th>
-                                <th>Группа</th>
                                 <th>Телефон</th>
                                 <th>Email</th>
                                 <th></th>
@@ -550,14 +613,9 @@ export const Pages = {
                     </table>
                 </div>
             `;
-            window._allStudents = students;
-            
-            document.getElementById('students-filter-group').onchange = () => this.filterStudents();
-            const addBtn = document.getElementById('add-student-btn');
-            if (addBtn) addBtn.onclick = () => this.studentModal();
             this.bindStudentActions();
         } catch (e) {
-            content.innerHTML = UI.emptyState('Ошибка', e.message);
+            result.innerHTML = UI.emptyState('Ошибка', e.message);
             console.error(e);
         }
     },
@@ -573,7 +631,7 @@ export const Pages = {
     
     renderStudents(students) {
         if (!students.length) {
-            return `<tr><td colspan="6">${UI.emptyState('Нет студентов', 'Добавьте студентов в систему', '⚇')}</td></tr>`;
+            return `<tr><td colspan="5">${UI.emptyState('В группе нет студентов', '', '⚇')}</td></tr>`;
         }
         return students.map(s => `
             <tr>
@@ -586,7 +644,6 @@ export const Pages = {
                     </div>
                 </td>
                 <td>${UI.escapeHtml(s.student_card || '—')}</td>
-                <td><span class="badge badge-info">${UI.escapeHtml(s.group_name || '—')}</span></td>
                 <td>${UI.escapeHtml(s.phone || '—')}</td>
                 <td>${UI.escapeHtml(s.email || '—')}</td>
                 <td>
@@ -599,15 +656,6 @@ export const Pages = {
                 </td>
             </tr>
         `).join('');
-    },
-    
-    filterStudents() {
-        const groupId = document.getElementById('students-filter-group').value;
-        const filtered = groupId 
-            ? window._allStudents.filter(s => s.group_id == groupId)
-            : window._allStudents;
-        document.getElementById('students-tbody').innerHTML = this.renderStudents(filtered);
-        this.bindStudentActions();
     },
     
     async studentModal() {
@@ -746,46 +794,127 @@ export const Pages = {
         content.innerHTML = UI.loader();
         try {
             const groups = await API.getGroups();
-            content.innerHTML = `
+            window._allGroups = groups;
+            
+            if (!groups.length) {
+                content.innerHTML = `
+                    ${App.hasRole('admin') ? 
+                        `<div style="margin-bottom:20px;"><button class="btn-primary" id="add-group-btn">+ Новая группа</button></div>` : ''}
+                    ${UI.emptyState('Нет групп', 'Создайте группу или импортируйте студентов', '▥')}
+                `;
+                const addBtn = document.getElementById('add-group-btn');
+                if (addBtn) addBtn.onclick = () => this.groupModal();
+                return;
+            }
+            
+            // Группируем по курсам
+            const byCourse = {};
+            groups.forEach(g => {
+                const c = g.course || 0;
+                if (!byCourse[c]) byCourse[c] = [];
+                byCourse[c].push(g);
+            });
+            const courses = Object.keys(byCourse).sort((a, b) => a - b);
+            
+            let html = `
                 ${App.hasRole('admin') ? 
                     `<div style="margin-bottom:20px;"><button class="btn-primary" id="add-group-btn">+ Новая группа</button></div>` : ''}
+            `;
+            
+            courses.forEach(course => {
+                const grps = byCourse[course].sort((a, b) => a.name.localeCompare(b.name));
+                html += `
+                    <div class="course-block">
+                        <div class="course-header">
+                            <span class="course-title">${course} курс</span>
+                            <span class="course-meta">${grps.length} групп · ${grps.reduce((s,g)=>s+(g.students_count||0),0)} студентов</span>
+                        </div>
+                        <div class="groups-grid">
+                            ${grps.map(g => `
+                                <div class="group-card" data-action="open-group" data-id="${g.id}">
+                                    <div class="group-card-head">
+                                        <span class="group-card-name">${UI.escapeHtml(g.name)}</span>
+                                        <span class="group-card-count">${g.students_count || 0}</span>
+                                    </div>
+                                    <div class="group-card-spec">${UI.escapeHtml(g.specialty || '—')}</div>
+                                    ${App.hasRole('admin') ? `
+                                        <button class="group-card-del" data-action="delete-group" data-id="${g.id}" title="Удалить группу">×</button>
+                                    ` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            content.innerHTML = html;
+            
+            const addBtn = document.getElementById('add-group-btn');
+            if (addBtn) addBtn.onclick = () => this.groupModal();
+            
+            // Клик по карточке группы → открыть студентов
+            document.querySelectorAll('[data-action="open-group"]').forEach(card => {
+                card.onclick = (e) => {
+                    if (e.target.dataset.action === 'delete-group') return; // не реагируем на крестик
+                    this.openGroupStudents(card.dataset.id);
+                };
+            });
+            
+            // Удаление группы
+            document.querySelectorAll('[data-action="delete-group"]').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    this.deleteGroup(btn.dataset.id);
+                };
+            });
+        } catch (e) { 
+            content.innerHTML = UI.emptyState('Ошибка', e.message);
+            console.error(e);
+        }
+    },
+    
+    // Открыть студентов конкретной группы (из страницы Группы)
+    async openGroupStudents(groupId) {
+        const content = document.getElementById('page-content');
+        const group = (window._allGroups || []).find(g => g.id === groupId);
+        const groupName = group ? group.name : '';
+        document.getElementById('page-title').textContent = 'Группа ' + groupName;
+        content.innerHTML = UI.loader();
+        
+        try {
+            const students = await API.getStudents(groupId);
+            
+            content.innerHTML = `
+                <div style="margin-bottom:16px;">
+                    <button class="btn-secondary" id="back-to-groups">← Ко всем группам</button>
+                </div>
                 <div class="table-container">
+                    <div class="table-header">
+                        <h3>Группа ${UI.escapeHtml(groupName)}</h3>
+                        <span style="color:var(--text-muted);">
+                            ${group ? UI.escapeHtml(group.specialty) + ' · ' : ''}Студентов: ${students.length}
+                        </span>
+                    </div>
                     <table>
                         <thead>
                             <tr>
-                                <th>Группа</th>
-                                <th>Специальность</th>
-                                <th>Курс</th>
-                                <th>Студентов</th>
+                                <th>ФИО</th>
+                                <th>№ билета</th>
+                                <th>Телефон</th>
+                                <th>Email</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${groups.length ? groups.map(g => `
-                                <tr>
-                                    <td><strong>${UI.escapeHtml(g.name)}</strong></td>
-                                    <td>${UI.escapeHtml(g.specialty)}</td>
-                                    <td><span class="badge badge-info">${g.course} курс</span></td>
-                                    <td>${g.students_count}</td>
-                                    <td>
-                                        ${App.hasRole('admin') ? `
-                                            <button class="btn-danger btn-sm" data-action="delete-group" data-id="${g.id}">×</button>
-                                        ` : ''}
-                                    </td>
-                                </tr>
-                            `).join('') : `<tr><td colspan="5">${UI.emptyState('Нет групп', 'Создайте первую группу', '▥')}</td></tr>`}
+                            ${this.renderStudents(students)}
                         </tbody>
                     </table>
                 </div>
             `;
             
-            const addBtn = document.getElementById('add-group-btn');
-            if (addBtn) addBtn.onclick = () => this.groupModal();
-            
-            document.querySelectorAll('[data-action="delete-group"]').forEach(btn => {
-                btn.onclick = () => this.deleteGroup(btn.dataset.id);
-            });
-        } catch (e) { 
+            document.getElementById('back-to-groups').onclick = () => App.navigate('groups');
+            this.bindStudentActions();
+        } catch (e) {
             content.innerHTML = UI.emptyState('Ошибка', e.message);
             console.error(e);
         }
@@ -796,11 +925,11 @@ export const Pages = {
             <form class="modal-form" id="group-form">
                 <div class="form-group">
                     <label>Название группы</label>
-                    <input type="text" name="name" required placeholder="например, ИС-21">
+                    <input type="text" name="name" required placeholder="например, 302 ПО">
                 </div>
                 <div class="form-group">
                     <label>Специальность</label>
-                    <input type="text" name="specialty" required placeholder="например, Информационные системы">
+                    <input type="text" name="specialty" required placeholder="например, Программное обеспечение">
                 </div>
                 <div class="form-group">
                     <label>Курс</label>
