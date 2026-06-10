@@ -1,226 +1,211 @@
-// =====================================================
-// Главный модуль приложения
-// =====================================================
-import {
-    registerUser, loginUser, logoutUser,
-    onAuthChange, currentUser, roleLabel, formatAuthError
-} from "./auth.js";
+// =====================================================================
+// ГЛАВНЫЙ МОДУЛЬ ПРИЛОЖЕНИЯ
+// Управление маршрутизацией, аутентификацией и состоянием
+// =====================================================================
 
-import * as pages from "./pages.js";
+import { API } from './api.js';
+import { Pages } from './pages.js';
 
-// =====================================================
-// Инициализация
-// =====================================================
-function init() {
-    setupAuthForms();
-    setupAuthTabs();
-    setupLogout();
-    setupRouting();
-    setupMobileMenu();
-
-    // Реагируем на изменение состояния авторизации
-    onAuthChange((user) => {
-        const loader = document.getElementById("loader");
-        if (loader) loader.style.display = "none";
-
-        if (user) {
-            showApp(user);
-        } else {
-            showAuth();
+const App = {
+    currentUser: null,
+    currentPage: 'dashboard',
+    
+    pageTitles: {
+        dashboard: 'Главная',
+        schedule: 'Расписание',
+        attendance: 'Посещаемость',
+        students: 'Студенты',
+        groups: 'Группы',
+        teachers: 'Преподаватели',
+        subjects: 'Предметы',
+        import: 'Импорт студентов',
+        reports: 'Отчёты'
+    },
+    
+    roleNames: {
+        admin: 'Администратор',
+        teacher: 'Преподаватель',
+        student: 'Студент'
+    },
+    
+    init() {
+        // Текущая дата в шапке
+        const dateEl = document.getElementById('current-date');
+        if (dateEl) dateEl.textContent = UI.formatDateLong(UI.todayISO());
+        
+        // События формы входа
+        document.getElementById('login-form').onsubmit = (e) => this.handleLogin(e);
+        document.getElementById('register-form').onsubmit = (e) => this.handleRegister(e);
+        document.getElementById('show-register').onclick = () => this.showRegister();
+        document.getElementById('back-to-login').onclick = () => this.showLogin();
+        
+        // Слушаем изменения авторизации Firebase
+        API.onAuthChange((user) => {
+            if (user) {
+                this.currentUser = user;
+                this.showApp();
+            } else {
+                this.showLogin();
+            }
+        });
+    },
+    
+    // ----- АУТЕНТИФИКАЦИЯ -----
+    async handleLogin(e) {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const errEl = document.getElementById('login-error');
+        const btn = document.getElementById('login-btn');
+        
+        errEl.textContent = '';
+        btn.disabled = true;
+        btn.textContent = 'Вход...';
+        
+        try {
+            await API.login(email, password);
+            // onAuthChange сработает автоматически
+        } catch (err) {
+            errEl.textContent = UI.translateFirebaseError(err.code) || err.message;
+            btn.disabled = false;
+            btn.textContent = 'Войти';
         }
-    });
-}
-
-// =====================================================
-// Мобильное меню-бургер
-// =====================================================
-function setupMobileMenu() {
-    const toggle = document.getElementById("menu-toggle");
-    const nav = document.getElementById("main-nav");
-    if (!toggle || !nav) return;
-
-    // Открытие/закрытие по клику на бургер
-    toggle.onclick = (e) => {
-        e.stopPropagation();
-        nav.classList.toggle("open");
-    };
-
-    // Закрыть меню при клике на пункт навигации
-    nav.addEventListener("click", (e) => {
-        if (e.target.classList.contains("nav-link")) {
-            nav.classList.remove("open");
+    },
+    
+    async handleRegister(e) {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const data = Object.fromEntries(fd);
+        const errEl = document.getElementById('register-error');
+        const btn = document.getElementById('register-btn');
+        
+        errEl.textContent = '';
+        btn.disabled = true;
+        btn.textContent = 'Регистрация...';
+        
+        try {
+            await API.register(data.email, data.password, {
+                full_name: data.full_name,
+                role: data.role
+            });
+            UI.success('Регистрация прошла успешно');
+            // onAuthChange сработает автоматически
+        } catch (err) {
+            errEl.textContent = UI.translateFirebaseError(err.code) || err.message;
+            btn.disabled = false;
+            btn.textContent = 'Зарегистрироваться';
         }
-    });
-
-    // Закрыть меню при клике вне его
-    document.addEventListener("click", (e) => {
-        if (!nav.contains(e.target) && !toggle.contains(e.target)) {
-            nav.classList.remove("open");
-        }
-    });
-
-    // Закрыть меню при смене ориентации/размера
-    window.addEventListener("resize", () => {
-        if (window.innerWidth > 768) {
-            nav.classList.remove("open");
-        }
-    });
-}
-
-// =====================================================
-// Управление видимостью страниц
-// =====================================================
-function showAuth() {
-    document.getElementById("page-auth").style.display = "block";
-    document.getElementById("page-app").style.display = "none";
-}
-
-function showApp(user) {
-    document.getElementById("page-auth").style.display = "none";
-    document.getElementById("page-app").style.display = "block";
-
-    // Обновляем верхнюю панель
-    document.getElementById("user-name").textContent = user.fullName;
-    const badge = document.getElementById("user-role-badge");
-    badge.textContent = roleLabel(user.role);
-    badge.className = `user-role role-${user.role}`;
-
-    // Скрываем разделы, недоступные для роли
-    document.querySelectorAll("#main-nav .nav-link[data-roles]").forEach(link => {
-        const allowedRoles = link.dataset.roles.split(",");
-        link.style.display = allowedRoles.includes(user.role) ? "" : "none";
-    });
-
-    // Запускаем роутинг
-    handleRoute();
-}
-
-// =====================================================
-// Формы входа и регистрации
-// =====================================================
-function setupAuthTabs() {
-    document.querySelectorAll(".auth-tab").forEach(tab => {
-        tab.onclick = () => {
-            document.querySelectorAll(".auth-tab").forEach(t => t.classList.remove("active"));
-            tab.classList.add("active");
-            const isLogin = tab.dataset.tab === "login";
-            document.getElementById("form-login").style.display = isLogin ? "" : "none";
-            document.getElementById("form-register").style.display = isLogin ? "none" : "";
-            document.getElementById("login-error").style.display = "none";
-            document.getElementById("register-error").style.display = "none";
+    },
+    
+    showLogin() {
+        document.getElementById('login-screen').classList.remove('hidden');
+        document.getElementById('register-screen').classList.add('hidden');
+        document.getElementById('app').classList.add('hidden');
+        
+        // Сбрасываем формы
+        document.getElementById('login-form').reset();
+        document.getElementById('login-error').textContent = '';
+        const btn = document.getElementById('login-btn');
+        if (btn) { btn.disabled = false; btn.textContent = 'Войти'; }
+    },
+    
+    showRegister() {
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('register-screen').classList.remove('hidden');
+        document.getElementById('app').classList.add('hidden');
+    },
+    
+    showApp() {
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('register-screen').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        
+        // Информация о пользователе
+        document.getElementById('user-name').textContent = this.currentUser.full_name || '—';
+        document.getElementById('user-role').textContent = this.roleNames[this.currentUser.role] || this.currentUser.role;
+        document.getElementById('user-avatar').textContent = UI.avatarLetters(this.currentUser.full_name);
+        
+        // Скрываем недоступные пункты меню
+        document.querySelectorAll('.nav-item[data-role]').forEach(item => {
+            const allowed = item.dataset.role.split(',');
+            item.style.display = allowed.includes(this.currentUser.role) ? '' : 'none';
+        });
+        
+        // Привязка событий навигации
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.onclick = (e) => {
+                e.preventDefault();
+                this.navigate(item.dataset.page);
+            };
+        });
+        
+        // Выход
+        document.getElementById('logout-btn').onclick = () => this.logout();
+        
+        // Мобильное меню (гамбургер)
+        this.initMobileMenu();
+        
+        this.navigate('dashboard');
+    },
+    
+    // ----- МОБИЛЬНОЕ МЕНЮ -----
+    initMobileMenu() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        const toggle = document.getElementById('menu-toggle');
+        
+        const open = () => {
+            sidebar.classList.add('open');
+            overlay.classList.add('show');
         };
-    });
-}
-
-function setupAuthForms() {
-    // Вход
-    document.getElementById("form-login").onsubmit = async (e) => {
-        e.preventDefault();
-        const errEl = document.getElementById("login-error");
-        errEl.style.display = "none";
+        const close = () => {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('show');
+        };
+        
+        if (toggle) toggle.onclick = open;
+        if (overlay) overlay.onclick = close;
+        
+        // Сохраняем функцию закрытия, чтобы вызывать при переходе на страницу
+        this._closeMobileMenu = close;
+    },
+    
+    async logout() {
         try {
-            await loginUser(
-                document.getElementById("login-email").value.trim(),
-                document.getElementById("login-password").value
-            );
-            // onAuthChange сам обработает переход
-        } catch (err) {
-            errEl.textContent = formatAuthError(err);
-            errEl.style.display = "block";
+            await API.logout();
+            this.currentUser = null;
+            UI.success('Вы вышли из системы');
+        } catch (e) {
+            UI.error(e.message);
         }
-    };
-
-    // Регистрация
-    document.getElementById("form-register").onsubmit = async (e) => {
-        e.preventDefault();
-        const errEl = document.getElementById("register-error");
-        errEl.style.display = "none";
-        try {
-            await registerUser(
-                document.getElementById("reg-email").value.trim(),
-                document.getElementById("reg-password").value,
-                document.getElementById("reg-name").value.trim(),
-                document.getElementById("reg-role").value
-            );
-            // onAuthChange сам обработает переход
-        } catch (err) {
-            errEl.textContent = formatAuthError(err);
-            errEl.style.display = "block";
+    },
+    
+    // ----- РОУТИНГ -----
+    navigate(page) {
+        this.currentPage = page;
+        
+        // Закрываем мобильное меню при переходе
+        if (this._closeMobileMenu) this._closeMobileMenu();
+        
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.page === page);
+        });
+        
+        document.getElementById('page-title').textContent = this.pageTitles[page] || page;
+        
+        if (Pages[page]) {
+            Pages[page]();
+        } else {
+            document.getElementById('page-content').innerHTML = UI.emptyState('Страница не найдена', '', '?');
         }
-    };
-}
-
-// =====================================================
-// Выход из системы
-// =====================================================
-function setupLogout() {
-    document.getElementById("btn-logout").onclick = async () => {
-        await logoutUser();
-        location.hash = "";
-    };
-}
-
-// =====================================================
-// Роутинг (на основе hash)
-// =====================================================
-function setupRouting() {
-    window.addEventListener("hashchange", handleRoute);
-}
-
-const routes = {
-    dashboard: { handler: pages.renderDashboard, roles: ["admin", "teacher", "student"] },
-    students:  { handler: pages.renderStudents,  roles: ["admin", "teacher"] },
-    groups:    { handler: pages.renderGroups,    roles: ["admin", "teacher"] },
-    subjects:  { handler: pages.renderSubjects,  roles: ["admin", "teacher", "student"] },
-    teachers:  { handler: pages.renderTeachers,  roles: ["admin"] },
-    grades:    { handler: pages.renderGrades,    roles: ["admin", "teacher", "student"] },
-    reports:   { handler: pages.renderReports,   roles: ["admin", "teacher"] }
+    },
+    
+    // ----- ПРОВЕРКА РОЛЕЙ -----
+    hasRole(...roles) {
+        return this.currentUser && roles.includes(this.currentUser.role);
+    }
 };
 
-async function handleRoute() {
-    if (!currentUser) return;
+window.App = App;
 
-    const hash = (location.hash || "#dashboard").substring(1).split("?")[0] || "dashboard";
-    const route = routes[hash];
-
-    // Подсветить активный пункт меню
-    document.querySelectorAll("#main-nav .nav-link").forEach(link => {
-        link.classList.toggle("active", link.dataset.page === hash);
-    });
-
-    // Проверка доступа
-    if (!route || !route.roles.includes(currentUser.role)) {
-        document.getElementById("page-content").innerHTML = `
-            <div class="card">
-                <div class="alert alert-warning">У вас нет прав для доступа к этой странице.</div>
-                <a href="#dashboard" class="btn btn-primary">На главную</a>
-            </div>
-        `;
-        return;
-    }
-
-    // Очищаем flash-сообщения и контент
-    document.getElementById("flash-container").innerHTML = "";
-
-    try {
-        await route.handler();
-    } catch (err) {
-        console.error(err);
-        document.getElementById("page-content").innerHTML = `
-            <div class="card">
-                <div class="alert alert-danger">
-                    Ошибка загрузки страницы: ${err.message}
-                </div>
-            </div>
-        `;
-    }
-}
-
-// =====================================================
-// Запуск приложения
-// =====================================================
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-} else {
-    init();
-}
+document.addEventListener('DOMContentLoaded', () => App.init());

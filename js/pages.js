@@ -1,1378 +1,1302 @@
-// =====================================================
-// Рендеринг страниц приложения
-// =====================================================
-import * as db from "./db.js";
-import { currentUser, roleLabel } from "./auth.js";
-import { exportToExcel, exportToPDF } from "./export.js";
-import { importFromExcel } from "./import.js";
+// =====================================================================
+// СТРАНИЦЫ ПРИЛОЖЕНИЯ
+// =====================================================================
 
-const content = () => document.getElementById("page-content");
+import { API } from './api.js';
 
-// Безопасное экранирование HTML
-function esc(str) {
-    if (str === null || str === undefined) return "";
-    return String(str)
-        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-// Отображение сообщения
-export function flash(message, type = "info") {
-    const fc = document.getElementById("flash-container");
-    const el = document.createElement("div");
-    el.className = `alert alert-${type}`;
-    el.innerHTML = `${esc(message)} <button class="alert-close">×</button>`;
-    el.querySelector(".alert-close").onclick = () => el.remove();
-    fc.appendChild(el);
-    setTimeout(() => el.remove(), 5000);
-}
-
-// =====================================================
-// СТРАНИЦА: Главная (Dashboard)
-// =====================================================
-export async function renderDashboard() {
-    content().innerHTML = `<div class="loader-inline">Загрузка...</div>`;
-
-    const role = currentUser.role;
-    let html = `
-        <div class="page-header">
-            <h1>Здравствуйте, ${esc(currentUser.fullName)}!</h1>
-            <p class="muted">Личный кабинет · ${roleLabel(role)}</p>
-        </div>
-    `;
-
-    if (role === "admin") {
-        const [students, teachers, groups, subjects, grades] = await Promise.all([
-            db.getAll("students"), db.getAll("teachers"),
-            db.getAll("groups"), db.getAll("subjects"), db.getAll("grades")
-        ]);
-        const avgScore = grades.length
-            ? db.avg(grades.map(g => g.score))
-            : 0;
-
-        html += `
-            <div class="stats-grid">
-                <div class="stat-card stat-blue">
-                    <div class="stat-label">Студенты</div>
-                    <div class="stat-value">${students.length}</div>
-                    <a href="#students" class="stat-link">Перейти →</a>
-                </div>
-                <div class="stat-card stat-purple">
-                    <div class="stat-label">Преподаватели</div>
-                    <div class="stat-value">${teachers.length}</div>
-                    <a href="#teachers" class="stat-link">Перейти →</a>
-                </div>
-                <div class="stat-card stat-green">
-                    <div class="stat-label">Группы</div>
-                    <div class="stat-value">${groups.length}</div>
-                    <a href="#groups" class="stat-link">Перейти →</a>
-                </div>
-                <div class="stat-card stat-orange">
-                    <div class="stat-label">Предметы</div>
-                    <div class="stat-value">${subjects.length}</div>
-                    <a href="#subjects" class="stat-link">Перейти →</a>
-                </div>
-                <div class="stat-card stat-red">
-                    <div class="stat-label">Всего оценок</div>
-                    <div class="stat-value">${grades.length}</div>
-                    <a href="#grades" class="stat-link">Перейти →</a>
-                </div>
-                <div class="stat-card stat-teal">
-                    <div class="stat-label">Средний балл по колледжу</div>
-                    <div class="stat-value">${avgScore}</div>
-                    <a href="#reports" class="stat-link">Отчёты →</a>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>Распределение оценок по буквенной шкале</h2>
-                ${grades.length === 0
-                    ? '<p class="muted">Оценок пока нет. Перейдите в раздел «Оценки», чтобы добавить первые записи.</p>'
-                    : '<canvas id="dashChart" height="100"></canvas>'}
-            </div>
-        `;
-
-        content().innerHTML = html;
-        if (grades.length) drawDashChart(grades);
-
-    } else if (role === "teacher") {
-        const grades = await db.getWhere("grades", "teacherId", currentUser.uid);
-        html += `
-            <div class="stats-grid">
-                <div class="stat-card stat-blue">
-                    <div class="stat-label">Выставлено оценок</div>
-                    <div class="stat-value">${grades.length}</div>
-                </div>
-                <div class="stat-card stat-green">
-                    <div class="stat-label">Средний балл</div>
-                    <div class="stat-value">${grades.length ? db.avg(grades.map(g => g.score)) : 0}</div>
-                </div>
-            </div>
-            <div class="card">
-                <h2>Быстрые действия</h2>
-                <div class="quick-actions">
-                    <a href="#grades" class="quick-action">
-                        <div class="qa-icon">📝</div><div class="qa-text">Выставить оценку</div>
-                    </a>
-                    <a href="#students" class="quick-action">
-                        <div class="qa-icon">👥</div><div class="qa-text">Список студентов</div>
-                    </a>
-                    <a href="#reports" class="quick-action">
-                        <div class="qa-icon">📊</div><div class="qa-text">Отчёты</div>
-                    </a>
-                </div>
-            </div>
-        `;
-        content().innerHTML = html;
-
-    } else {  // student
-        const myGrades = await db.getWhere("grades", "studentEmail", currentUser.email);
-        const avgScore = myGrades.length ? db.avg(myGrades.map(g => g.score)) : 0;
-        const letter = db.scoreToLetter(avgScore);
-
-        html += `
-            <div class="stats-grid">
-                <div class="stat-card stat-blue">
-                    <div class="stat-label">Всего оценок</div>
-                    <div class="stat-value">${myGrades.length}</div>
-                </div>
-                <div class="stat-card stat-green">
-                    <div class="stat-label">Средний балл</div>
-                    <div class="stat-value">${avgScore} <span class="grade-badge ${db.gradeClass(avgScore)}">${letter}</span></div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>Информация о профиле</h2>
-                <div class="profile-grid">
-                    <div><strong>ФИО:</strong> ${esc(currentUser.fullName)}</div>
-                    <div><strong>Email:</strong> ${esc(currentUser.email)}</div>
-                </div>
-                <div style="margin-top:16px">
-                    <a href="#grades" class="btn btn-primary">Мои оценки</a>
-                </div>
-            </div>
-        `;
-        content().innerHTML = html;
-    }
-}
-
-function drawDashChart(grades) {
-    const counts = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-    grades.forEach(g => counts[db.scoreToLetter(g.score)]++);
-    new Chart(document.getElementById("dashChart"), {
-        type: "bar",
-        data: {
-            labels: ["A (90-100)", "B (75-89)", "C (60-74)", "D (50-59)", "F (0-49)"],
-            datasets: [{
-                label: "Количество",
-                data: [counts.A, counts.B, counts.C, counts.D, counts.F],
-                backgroundColor: ["#16a34a", "#65a30d", "#f59e0b", "#0891b2", "#dc2626"],
-                borderRadius: 6
-            }]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-        }
-    });
-}
-
-// =====================================================
-// СТРАНИЦА: Группы
-// =====================================================
-export async function renderGroups() {
-    const role = currentUser.role;
-    const canEdit = role === "admin";
-
-    const [groups, students] = await Promise.all([
-        db.getAll("groups"),
-        db.getAll("students")
-    ]);
-
-    // Сортировка по курсу, затем по названию
-    const groupsSorted = db.sortGroups(groups);
-
-    let html = `
-        <div class="page-header">
-            <h1>Учебные группы</h1>
-            <p class="muted">Всего групп: ${groups.length}</p>
-        </div>
-    `;
-
-    if (canEdit) {
-        html += `
-            <div class="card">
-                <h2>Добавить новую группу</h2>
-                <form id="form-add-group" class="form-grid">
-                    <div class="form-group">
-                        <label>Название группы *</label>
-                        <input type="text" name="name" required placeholder="ПО-21" maxlength="30">
+export const Pages = {
+    
+    // ================================================================
+    // ГЛАВНАЯ — дашборд
+    // ================================================================
+    async dashboard() {
+        const content = document.getElementById('page-content');
+        content.innerHTML = UI.loader();
+        
+        try {
+            const stats = await API.getDashboardStats();
+            
+            const statusDist = stats.status_distribution || {};
+            const total = Object.values(statusDist).reduce((a, b) => a + b, 0) || 1;
+            
+            content.innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Студенты</div>
+                        <div class="stat-value">${stats.total_students}</div>
                     </div>
-                    <div class="form-group form-group-wide">
-                        <label>Специальность *</label>
-                        <input type="text" name="specialty" required placeholder="Программное обеспечение">
+                    <div class="stat-card info">
+                        <div class="stat-label">Группы</div>
+                        <div class="stat-value">${stats.total_groups}</div>
                     </div>
-                    <div class="form-group">
-                        <label>Курс *</label>
-                        <select name="course" required>
-                            <option value="1">1 курс</option>
-                            <option value="2">2 курс</option>
-                            <option value="3">3 курс</option>
-                            <option value="4">4 курс</option>
-                        </select>
+                    <div class="stat-card warning">
+                        <div class="stat-label">Преподаватели</div>
+                        <div class="stat-value">${stats.total_teachers}</div>
                     </div>
-                    <div class="form-group form-group-full">
-                        <button type="submit" class="btn btn-primary">+ Добавить</button>
+                    <div class="stat-card">
+                        <div class="stat-label">Предметы</div>
+                        <div class="stat-value">${stats.total_subjects}</div>
                     </div>
-                </form>
-            </div>
-        `;
-    }
-
-    html += `<div class="card">`;
-    if (groups.length === 0) {
-        html += `<p class="muted text-center" style="padding:30px">Групп пока нет. ${canEdit ? "Добавьте первую группу через форму выше." : ""}</p>`;
-    } else {
-        html += `
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>№</th><th>Название</th><th>Специальность</th><th>Курс</th><th>Студентов</th>
-                        ${canEdit ? "<th>Действия</th>" : ""}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${groupsSorted.map((g, i) => {
-                        const count = students.filter(s => s.groupId === g.id).length;
-                        return `
-                            <tr>
-                                <td>${i + 1}</td>
-                                <td><strong>${esc(g.name)}</strong></td>
-                                <td>${esc(g.specialty)}</td>
-                                <td><span class="badge">${g.course} курс</span></td>
-                                <td><span class="badge badge-info">${count} чел.</span></td>
-                                ${canEdit ? `<td><button class="btn btn-sm btn-danger" data-del-group="${g.id}" data-name="${esc(g.name)}">Удалить</button></td>` : ""}
-                            </tr>
-                        `;
-                    }).join("")}
-                </tbody>
-            </table>
-        `;
-    }
-    html += `</div>`;
-
-    content().innerHTML = html;
-
-    // Обработчики
-    if (canEdit) {
-        document.getElementById("form-add-group").onsubmit = async (e) => {
-            e.preventDefault();
-            const f = e.target;
-            try {
-                await db.create("groups", {
-                    name: f.name.value.trim(),
-                    specialty: f.specialty.value.trim(),
-                    course: parseInt(f.course.value)
-                });
-                flash("Группа добавлена", "success");
-                renderGroups();
-            } catch (err) {
-                flash("Ошибка: " + err.message, "danger");
-            }
-        };
-
-        document.querySelectorAll("[data-del-group]").forEach(btn => {
-            btn.onclick = async () => {
-                if (!confirm(`Удалить группу "${btn.dataset.name}"?`)) return;
-                try {
-                    await db.remove("groups", btn.dataset.delGroup);
-                    flash("Группа удалена", "success");
-                    renderGroups();
-                } catch (err) {
-                    flash("Ошибка: " + err.message, "danger");
-                }
-            };
-        });
-    }
-}
-
-// =====================================================
-// СТРАНИЦА: Студенты
-// =====================================================
-export async function renderStudents() {
-    const role = currentUser.role;
-    const canEdit = role === "admin";
-
-    const [students, groups] = await Promise.all([
-        db.getAll("students"),
-        db.getAll("groups")
-    ]);
-
-    const groupsById = Object.fromEntries(groups.map(g => [g.id, g]));
-
-    // Фильтр по группе через URL
-    const params = new URLSearchParams(location.hash.split("?")[1] || "");
-    const filterGroupId = params.get("group");
-
-    let displayed = students;
-    if (filterGroupId) displayed = students.filter(s => s.groupId === filterGroupId);
-    displayed.sort((a, b) => a.fullName.localeCompare(b.fullName));
-
-    let html = `
-        <div class="page-header">
-            <h1>Студенты</h1>
-            <p class="muted">Показано записей: ${displayed.length} из ${students.length}</p>
-        </div>
-
-        <div class="card">
-            <form id="form-filter" class="filter-form">
-                <label>Фильтр по группе:</label>
-                <select id="filter-group">
-                    <option value="">Все группы</option>
-                    ${db.sortGroups(groups).map(g => `<option value="${g.id}" ${g.id === filterGroupId ? "selected" : ""}>${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
-                </select>
-                ${filterGroupId ? '<a href="#students" class="btn btn-sm btn-outline">Сбросить</a>' : ''}
-            </form>
-        </div>
-    `;
-
-    if (canEdit) {
-        html += `
-            <div class="card import-card">
-                <h2>📥 Массовый импорт из Excel</h2>
-                <p class="muted" style="margin-bottom:12px">
-                    Загрузите файл выгрузки из системы «Контингент» (формат .xls / .xlsx) —
-                    программа автоматически создаст все группы и студентов.
-                    Дубли пропускаются.
-                </p>
-
-                <form id="form-import" class="import-form-extended">
-                    <div class="form-group">
-                        <label>Файл с данными студентов</label>
-                        <input type="file" id="import-file" accept=".xls,.xlsx" required>
+                    <div class="stat-card success">
+                        <div class="stat-label">Занятий сегодня</div>
+                        <div class="stat-value">${stats.today_lessons}</div>
                     </div>
-
-                    <div class="form-group import-checkbox">
-                        <label>
-                            <input type="checkbox" id="import-create-accounts" checked>
-                            <span><strong>Создавать учётные записи студентов</strong> в Firebase Auth</span>
-                        </label>
-                        <p class="muted" style="margin:6px 0 0 26px;font-size:12px">
-                            Логин = email из Excel, пароль для всех = <code>Avpk2026!</code>.
-                            Firebase ограничивает ~50 регистраций/час — запускайте импорт
-                            повторно, программа пропустит уже созданных.
-                        </p>
-                    </div>
-
-                    <div class="form-group" id="admin-password-group">
-                        <label>Ваш пароль (нужен для возврата после создания учёток)</label>
-                        <input type="password" id="admin-password" placeholder="••••••••">
-                        <p class="muted" style="margin:4px 0 0;font-size:12px">
-                            Firebase автоматически переключается на каждого нового пользователя.
-                            После импорта программа войдёт обратно под админом.
-                        </p>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">Запустить импорт</button>
-                </form>
-                <div id="import-log" class="import-log" style="display:none"></div>
-            </div>
-        `;
-
-        html += `
-            <div class="card">
-                <h2>Добавить нового студента</h2>
-                ${groups.length === 0
-                    ? '<p class="alert alert-warning">Сначала нужно создать хотя бы одну группу в разделе «Группы».</p>'
-                    : `
-                <form id="form-add-student" class="form-grid">
-                    <div class="form-group form-group-wide">
-                        <label>ФИО *</label>
-                        <input type="text" name="fullName" required placeholder="Иванов Иван Иванович">
-                    </div>
-                    <div class="form-group">
-                        <label>Группа *</label>
-                        <select name="groupId" required>
-                            <option value="">— выберите —</option>
-                            ${db.sortGroups(groups).map(g => `<option value="${g.id}">${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Email (для оценок)</label>
-                        <input type="email" name="email" placeholder="student@avpk.kz">
-                    </div>
-                    <div class="form-group">
-                        <label>Телефон</label>
-                        <input type="tel" name="phone" placeholder="+77001234567">
-                    </div>
-                    <div class="form-group">
-                        <label>Дата рождения</label>
-                        <input type="date" name="birthDate">
-                    </div>
-                    <div class="form-group form-group-full">
-                        <button type="submit" class="btn btn-primary">+ Добавить студента</button>
-                    </div>
-                </form>
-                `}
-            </div>
-        `;
-    }
-
-    html += `<div class="card">`;
-    if (displayed.length === 0) {
-        html += `<p class="muted text-center" style="padding:30px">Студентов не найдено.</p>`;
-    } else {
-        html += `
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>№</th><th>ФИО</th><th>Группа</th><th>Email</th><th>Телефон</th>
-                        ${canEdit ? "<th>Действия</th>" : ""}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${displayed.map((s, i) => `
-                        <tr>
-                            <td>${i + 1}</td>
-                            <td><strong>${esc(s.fullName)}</strong></td>
-                            <td><span class="badge">${esc(groupsById[s.groupId]?.name || "—")}</span></td>
-                            <td>${esc(s.email || "—")}</td>
-                            <td>${esc(s.phone || "—")}</td>
-                            ${canEdit ? `<td><button class="btn btn-sm btn-danger" data-del-student="${s.id}" data-name="${esc(s.fullName)}">Удалить</button></td>` : ""}
-                        </tr>
-                    `).join("")}
-                </tbody>
-            </table>
-        `;
-    }
-    html += `</div>`;
-
-    content().innerHTML = html;
-
-    // Фильтр по группе
-    document.getElementById("filter-group").onchange = (e) => {
-        const v = e.target.value;
-        location.hash = v ? `students?group=${v}` : "students";
-    };
-
-    if (canEdit && groups.length > 0) {
-        document.getElementById("form-add-student").onsubmit = async (e) => {
-            e.preventDefault();
-            const f = e.target;
-            try {
-                await db.create("students", {
-                    fullName: f.fullName.value.trim(),
-                    groupId: f.groupId.value,
-                    email: f.email.value.trim(),
-                    phone: f.phone.value.trim(),
-                    birthDate: f.birthDate.value || null
-                });
-                flash("Студент добавлен", "success");
-                renderStudents();
-            } catch (err) {
-                flash("Ошибка: " + err.message, "danger");
-            }
-        };
-
-        document.querySelectorAll("[data-del-student]").forEach(btn => {
-            btn.onclick = async () => {
-                if (!confirm(`Удалить студента "${btn.dataset.name}"?`)) return;
-                try {
-                    await db.remove("students", btn.dataset.delStudent);
-                    flash("Студент удалён", "success");
-                    renderStudents();
-                } catch (err) {
-                    flash("Ошибка: " + err.message, "danger");
-                }
-            };
-        });
-    }
-
-    // === Обработчик импорта из Excel (работает всегда у админа, даже без групп) ===
-    if (canEdit) {
-        const formImport = document.getElementById("form-import");
-        if (formImport) {
-            const checkboxAccounts = document.getElementById("import-create-accounts");
-            const adminPwdGroup = document.getElementById("admin-password-group");
-            checkboxAccounts.onchange = () => {
-                adminPwdGroup.style.display = checkboxAccounts.checked ? "" : "none";
-            };
-            // Сразу применим состояние галочки
-            adminPwdGroup.style.display = checkboxAccounts.checked ? "" : "none";
-
-            formImport.onsubmit = async (e) => {
-                e.preventDefault();
-                const fileInput = document.getElementById("import-file");
-                const file = fileInput.files[0];
-                const createAccounts = checkboxAccounts.checked;
-                const adminPassword = document.getElementById("admin-password").value;
-
-                if (!file) {
-                    flash("Выберите файл", "warning");
-                    return;
-                }
-                if (createAccounts && !adminPassword) {
-                    flash("Введите ваш пароль администратора", "warning");
-                    return;
-                }
-
-                const logEl = document.getElementById("import-log");
-                logEl.style.display = "block";
-                logEl.innerHTML = "";
-
-                const appendLog = (msg, type = "info") => {
-                    const line = document.createElement("div");
-                    line.className = "import-log-line import-log-" + type;
-                    line.textContent = msg;
-                    logEl.appendChild(line);
-                    logEl.scrollTop = logEl.scrollHeight;
-                };
-
-                const submitBtn = formImport.querySelector("button[type=submit]");
-                submitBtn.disabled = true;
-                submitBtn.textContent = "Импорт идёт...";
-
-                try {
-                    const confirmMsg = createAccounts
-                        ? `Будут импортированы студенты из файла "${file.name}" с созданием учётных записей.\nЭто может занять до часа. Продолжить?`
-                        : `Будут импортированы студенты из файла "${file.name}".\nПродолжить?`;
-
-                    if (!confirm(confirmMsg)) {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = "Запустить импорт";
-                        return;
-                    }
-
-                    const result = await importFromExcel(file, {
-                        createAccounts: createAccounts,
-                        adminEmail: currentUser.email,
-                        adminPassword: adminPassword
-                    }, appendLog);
-
-                    let summary = `Создано: ${result.groupsCreated} групп, ${result.studentsCreated} студентов`;
-                    if (createAccounts) {
-                        summary += `, ${result.accountsCreated} учёток`;
-                    }
-                    flash(summary, "success");
-
-                    if (!result.rateLimitHit) {
-                        setTimeout(() => renderStudents(), 3000);
-                    }
-                } catch (err) {
-                    console.error(err);
-                    appendLog("❌ Ошибка: " + err.message, "danger");
-                    flash("Ошибка импорта: " + err.message, "danger");
-                } finally {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = "Запустить импорт";
-                }
-            };
-        }
-    }
-}
-
-// =====================================================
-// СТРАНИЦА: Предметы
-// =====================================================
-export async function renderSubjects() {
-    const role = currentUser.role;
-    const canEdit = role === "admin";
-
-    const subjects = await db.getAll("subjects");
-    subjects.sort((a, b) => a.name.localeCompare(b.name));
-
-    let html = `
-        <div class="page-header">
-            <h1>Учебные предметы</h1>
-            <p class="muted">Всего дисциплин: ${subjects.length}</p>
-        </div>
-    `;
-
-    if (canEdit) {
-        html += `
-            <div class="card">
-                <h2>Добавить новый предмет</h2>
-                <form id="form-add-subject" class="form-grid">
-                    <div class="form-group form-group-wide">
-                        <label>Название *</label>
-                        <input type="text" name="name" required placeholder="Программирование на Python">
-                    </div>
-                    <div class="form-group">
-                        <label>Количество часов</label>
-                        <input type="number" name="hours" min="0" placeholder="144">
-                    </div>
-                    <div class="form-group form-group-full">
-                        <label>Описание</label>
-                        <textarea name="description" rows="2" placeholder="Краткое описание дисциплины"></textarea>
-                    </div>
-                    <div class="form-group form-group-full">
-                        <button type="submit" class="btn btn-primary">+ Добавить</button>
-                    </div>
-                </form>
-            </div>
-        `;
-    }
-
-    html += `<div class="card">`;
-    if (subjects.length === 0) {
-        html += `<p class="muted text-center" style="padding:30px">Предметов пока нет.${canEdit ? " Добавьте первый предмет." : ""}</p>`;
-    } else {
-        html += `
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>№</th><th>Название</th><th>Часов</th><th>Описание</th>
-                        ${canEdit ? "<th>Действия</th>" : ""}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${subjects.map((s, i) => `
-                        <tr>
-                            <td>${i + 1}</td>
-                            <td><strong>${esc(s.name)}</strong></td>
-                            <td>${s.hours || 0}</td>
-                            <td>${esc(s.description || "—")}</td>
-                            ${canEdit ? `<td><button class="btn btn-sm btn-danger" data-del-subject="${s.id}" data-name="${esc(s.name)}">Удалить</button></td>` : ""}
-                        </tr>
-                    `).join("")}
-                </tbody>
-            </table>
-        `;
-    }
-    html += `</div>`;
-
-    content().innerHTML = html;
-
-    if (canEdit) {
-        document.getElementById("form-add-subject").onsubmit = async (e) => {
-            e.preventDefault();
-            const f = e.target;
-            try {
-                await db.create("subjects", {
-                    name: f.name.value.trim(),
-                    hours: parseInt(f.hours.value) || 0,
-                    description: f.description.value.trim()
-                });
-                flash("Предмет добавлен", "success");
-                renderSubjects();
-            } catch (err) {
-                flash("Ошибка: " + err.message, "danger");
-            }
-        };
-
-        document.querySelectorAll("[data-del-subject]").forEach(btn => {
-            btn.onclick = async () => {
-                if (!confirm(`Удалить предмет "${btn.dataset.name}"?`)) return;
-                try {
-                    await db.remove("subjects", btn.dataset.delSubject);
-                    flash("Предмет удалён", "success");
-                    renderSubjects();
-                } catch (err) {
-                    flash("Ошибка: " + err.message, "danger");
-                }
-            };
-        });
-    }
-}
-
-// =====================================================
-// СТРАНИЦА: Оценки
-// =====================================================
-export async function renderGrades() {
-    const role = currentUser.role;
-    const canEdit = role === "admin" || role === "teacher";
-
-    const [grades, students, subjects, groups, users, assignments] = await Promise.all([
-        db.getAll("grades"),
-        db.getAll("students"),
-        db.getAll("subjects"),
-        db.getAll("groups"),
-        db.getAll("users"),
-        db.getAll("assignments")
-    ]);
-
-    const groupsById = Object.fromEntries(groups.map(g => [g.id, g]));
-    const studentsById = Object.fromEntries(students.map(s => [s.id, s]));
-    const subjectsById = Object.fromEntries(subjects.map(s => [s.id, s]));
-    const usersByUid = Object.fromEntries(users.map(u => [u.uid, u]));
-
-    // === Для преподавателя — отфильтровать данные по его назначениям ===
-    let myAssignments = [];
-    let mySubjectIds = new Set();
-    let myGroupIds = new Set();
-    let myStudents = students;
-    let mySubjects = subjects;
-
-    if (role === "teacher") {
-        myAssignments = assignments.filter(a => a.teacherId === currentUser.uid);
-        mySubjectIds = new Set(myAssignments.map(a => a.subjectId));
-        myGroupIds = new Set(myAssignments.map(a => a.groupId));
-        myStudents = students.filter(s => myGroupIds.has(s.groupId));
-        mySubjects = subjects.filter(s => mySubjectIds.has(s.id));
-    }
-
-    // Фильтрация показываемых оценок
-    let displayed = grades;
-    if (role === "student") {
-        displayed = grades.filter(g => g.studentEmail === currentUser.email);
-    } else if (role === "teacher") {
-        displayed = grades.filter(g => g.teacherId === currentUser.uid);
-    }
-    displayed.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-
-    let html = `
-        <div class="page-header">
-            <h1>Оценки</h1>
-            <p class="muted">${
-                role === "student" ? "Мои оценки" :
-                role === "teacher" ? `Мои оценки · ${displayed.length} записей · ${myAssignments.length} назначений` :
-                `Всего записей: ${displayed.length}`
-            }</p>
-        </div>
-
-        <div class="card">
-            <h2 style="margin-bottom:10px">Шкала оценок (100-балльная система)</h2>
-            <div class="scale-grid">
-                <div class="scale-item"><span class="grade-badge grade-A">A</span> 90–100 — Отлично</div>
-                <div class="scale-item"><span class="grade-badge grade-B">B</span> 75–89 — Хорошо</div>
-                <div class="scale-item"><span class="grade-badge grade-C">C</span> 60–74 — Удовлетворительно</div>
-                <div class="scale-item"><span class="grade-badge grade-D">D</span> 50–59 — Зачёт</div>
-                <div class="scale-item"><span class="grade-badge grade-F">F</span> 0–49 — Неудовлетворительно</div>
-            </div>
-        </div>
-    `;
-
-    if (canEdit) {
-        // Преподавателю — проверим что ему вообще назначили предметы
-        if (role === "teacher" && myAssignments.length === 0) {
-            html += `
-                <div class="card">
-                    <div class="alert alert-warning">
-                        <strong>Вам ещё не назначены предметы и группы.</strong><br>
-                        Обратитесь к администратору, чтобы он назначил вам предметы и группы,
-                        в которых вы преподаёте.
+                    <div class="stat-card ${stats.attendance_rate >= 85 ? 'success' : stats.attendance_rate >= 70 ? 'warning' : 'danger'}">
+                        <div class="stat-label">Посещаемость</div>
+                        <div class="stat-value">${stats.attendance_rate}<span class="stat-suffix">%</span></div>
                     </div>
                 </div>
-            `;
-        } else if (students.length === 0 || subjects.length === 0) {
-            html += `
-                <div class="card">
-                    <div class="alert alert-warning">
-                        Чтобы выставлять оценки, нужно добавить минимум одного студента и один предмет.
-                        ${students.length === 0 ? '<br>→ <a href="#students">Добавить студентов</a>' : ""}
-                        ${subjects.length === 0 ? '<br>→ <a href="#subjects">Добавить предметы</a>' : ""}
-                    </div>
-                </div>
-            `;
-        } else {
-            // Подготовим список групп для фильтра в форме
-            // Для преподавателя — только его группы, для админа — все
-            const availableGroups = role === "teacher"
-                ? db.sortGroups(groups.filter(g => myGroupIds.has(g.id)))
-                : db.sortGroups(groups);
-
-            // Список предметов
-            const availableSubjects = role === "teacher"
-                ? [...mySubjects].sort((a,b) => a.name.localeCompare(b.name))
-                : [...subjects].sort((a,b) => a.name.localeCompare(b.name));
-
-            html += `
-                <div class="card">
-                    <h2>📝 Выставить оценку</h2>
-                    <form id="form-add-grade" class="form-grid">
-                        <div class="form-group">
-                            <label>Группа *</label>
-                            <select name="groupId" id="grade-group" required>
-                                <option value="">— выберите группу —</option>
-                                ${availableGroups.map(g => `<option value="${g.id}">${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
-                            </select>
+                
+                <div class="dashboard-grid">
+                    <div class="card chart-card">
+                        <h4>Распределение статусов посещаемости</h4>
+                        <div class="status-distribution">
+                            <div class="status-dist-item present">
+                                <div class="status-dist-label">Присутствовали</div>
+                                <div class="status-dist-value">${statusDist.present || 0}</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width:${(statusDist.present||0)/total*100}%; background: var(--success)"></div>
+                                </div>
+                            </div>
+                            <div class="status-dist-item absent">
+                                <div class="status-dist-label">Отсутствовали</div>
+                                <div class="status-dist-value">${statusDist.absent || 0}</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width:${(statusDist.absent||0)/total*100}%; background: var(--danger)"></div>
+                                </div>
+                            </div>
+                            <div class="status-dist-item late">
+                                <div class="status-dist-label">Опоздания</div>
+                                <div class="status-dist-value">${statusDist.late || 0}</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width:${(statusDist.late||0)/total*100}%; background: var(--warning)"></div>
+                                </div>
+                            </div>
+                            <div class="status-dist-item excused">
+                                <div class="status-dist-label">Уваж. причина</div>
+                                <div class="status-dist-value">${statusDist.excused || 0}</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width:${(statusDist.excused||0)/total*100}%; background: var(--info)"></div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Студент *</label>
-                            <select name="studentId" id="grade-student" required disabled>
-                                <option value="">— сначала выберите группу —</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Предмет *</label>
-                            <select name="subjectId" id="grade-subject" required ${role === "teacher" && availableSubjects.length === 0 ? "disabled" : ""}>
-                                <option value="">— выберите предмет —</option>
-                                ${availableSubjects.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Балл (10–100) *</label>
-                            <input type="number" name="score" required min="10" max="100" placeholder="85">
-                        </div>
-                        <div class="form-group">
-                            <label>Дата</label>
-                            <input type="date" name="date" value="${new Date().toISOString().slice(0,10)}">
-                        </div>
-                        <div class="form-group">
-                            <label>Тип</label>
-                            <select name="type">
-                                <option value="current">Текущая</option>
-                                <option value="midterm">Рубежный контроль</option>
-                                <option value="exam">Экзамен</option>
-                            </select>
-                        </div>
-                        <div class="form-group form-group-full">
-                            <label>Комментарий</label>
-                            <input type="text" name="comment" placeholder="Необязательно">
-                        </div>
-                        <div class="form-group form-group-full">
-                            <button type="submit" class="btn btn-primary">+ Выставить оценку</button>
-                        </div>
-                    </form>
-                </div>
-            `;
-        }
-    }
-
-    html += `<div class="card"><h2>${role === "student" ? "История моих оценок" : "Список оценок"}</h2>`;
-    if (displayed.length === 0) {
-        html += `<p class="muted text-center" style="padding:30px">Оценок пока нет.</p>`;
-    } else {
-        html += `
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Дата</th>
-                        ${role !== "student" ? "<th>Студент</th><th>Группа</th>" : ""}
-                        <th>Предмет</th><th>Тип</th><th>Балл</th><th>Оценка</th>
-                        <th>Преподаватель</th><th>Комментарий</th>
-                        ${canEdit ? "<th></th>" : ""}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${displayed.map(g => {
-                        const stud = studentsById[g.studentId];
-                        const subj = subjectsById[g.subjectId];
-                        const teacher = usersByUid[g.teacherId];
-                        const typeLabel = { current: "текущая", midterm: "рубежный", exam: "экзамен" }[g.type] || g.type;
-                        return `
-                            <tr>
-                                <td>${esc(g.date)}</td>
-                                ${role !== "student" ? `
-                                    <td>${esc(stud?.fullName || "—")}</td>
-                                    <td><span class="badge">${esc(groupsById[stud?.groupId]?.name || "—")}</span></td>
-                                ` : ""}
-                                <td>${esc(subj?.name || "—")}</td>
-                                <td>${typeLabel}</td>
-                                <td><strong>${g.score}</strong></td>
-                                <td><span class="grade-badge ${db.gradeClass(g.score)}">${db.scoreToLetter(g.score)}</span></td>
-                                <td>${esc(teacher?.fullName || "—")}</td>
-                                <td>${esc(g.comment || "")}</td>
-                                ${canEdit ? `<td><button class="btn btn-sm btn-danger" data-del-grade="${g.id}">×</button></td>` : ""}
-                            </tr>
-                        `;
-                    }).join("")}
-                </tbody>
-            </table>
-        `;
-    }
-    html += `</div>`;
-
-    content().innerHTML = html;
-
-    if (canEdit && students.length > 0 && subjects.length > 0 &&
-        !(role === "teacher" && myAssignments.length === 0)) {
-
-        // Динамическая загрузка студентов при выборе группы
-        const groupSelect = document.getElementById("grade-group");
-        const studentSelect = document.getElementById("grade-student");
-
-        if (groupSelect && studentSelect) {
-            groupSelect.onchange = () => {
-                const groupId = groupSelect.value;
-                if (!groupId) {
-                    studentSelect.disabled = true;
-                    studentSelect.innerHTML = '<option value="">— сначала выберите группу —</option>';
-                    return;
-                }
-                const groupStudents = students
-                    .filter(s => s.groupId === groupId)
-                    .sort((a, b) => a.fullName.localeCompare(b.fullName));
-
-                studentSelect.disabled = false;
-                studentSelect.innerHTML = '<option value="">— выберите студента —</option>' +
-                    groupStudents.map(s => `<option value="${s.id}">${esc(s.fullName)}</option>`).join("");
-            };
-        }
-
-        document.getElementById("form-add-grade").onsubmit = async (e) => {
-            e.preventDefault();
-            const f = e.target;
-            const score = parseInt(f.score.value);
-            if (score < 10 || score > 100) {
-                flash("Балл должен быть в диапазоне 10–100", "danger");
-                return;
-            }
-
-            // Для преподавателя — проверяем что у него есть назначение на эту группу+предмет
-            if (role === "teacher") {
-                const hasAssignment = myAssignments.some(a =>
-                    a.subjectId === f.subjectId.value && a.groupId === f.groupId.value
-                );
-                if (!hasAssignment) {
-                    flash("Вы не назначены преподавать этот предмет в выбранной группе", "danger");
-                    return;
-                }
-            }
-
-            const stud = studentsById[f.studentId.value];
-            try {
-                await db.create("grades", {
-                    studentId: f.studentId.value,
-                    studentEmail: stud?.email || "",
-                    subjectId: f.subjectId.value,
-                    groupId: f.groupId.value,
-                    teacherId: currentUser.uid,
-                    score: score,
-                    date: f.date.value || new Date().toISOString().slice(0,10),
-                    type: f.type.value,
-                    comment: f.comment.value.trim()
-                });
-                flash("Оценка выставлена", "success");
-                renderGrades();
-            } catch (err) {
-                flash("Ошибка: " + err.message, "danger");
-            }
-        };
-
-        document.querySelectorAll("[data-del-grade]").forEach(btn => {
-            btn.onclick = async () => {
-                if (!confirm("Удалить оценку?")) return;
-                try {
-                    await db.remove("grades", btn.dataset.delGrade);
-                    flash("Оценка удалена", "success");
-                    renderGrades();
-                } catch (err) {
-                    flash("Ошибка: " + err.message, "danger");
-                }
-            };
-        });
-    }
-}
-
-// =====================================================
-// СТРАНИЦА: Отчёты
-// =====================================================
-export async function renderReports() {
-    const [grades, students, subjects, groups] = await Promise.all([
-        db.getAll("grades"),
-        db.getAll("students"),
-        db.getAll("subjects"),
-        db.getAll("groups")
-    ]);
-
-    const groupsById = Object.fromEntries(groups.map(g => [g.id, g]));
-    const studentsById = Object.fromEntries(students.map(s => [s.id, s]));
-    const subjectsById = Object.fromEntries(subjects.map(s => [s.id, s]));
-
-    if (grades.length === 0) {
-        content().innerHTML = `
-            <div class="page-header">
-                <h1>Отчёты и статистика</h1>
-            </div>
-            <div class="card">
-                <p class="alert alert-info">
-                    Оценок пока нет. Отчёты появятся после выставления первых оценок в разделе «Оценки».
-                </p>
-            </div>
-        `;
-        return;
-    }
-
-    // Средний балл по группам
-    const byGroup = groups.map(g => {
-        const groupStudents = students.filter(s => s.groupId === g.id);
-        const studentIds = new Set(groupStudents.map(s => s.id));
-        const groupGrades = grades.filter(gr => studentIds.has(gr.studentId));
-        return {
-            ...g,
-            studentsCount: groupStudents.length,
-            gradesCount: groupGrades.length,
-            avgScore: groupGrades.length ? db.avg(groupGrades.map(g => g.score)) : 0
-        };
-    }).sort((a, b) => b.avgScore - a.avgScore);
-
-    // Средний балл по предметам
-    const bySubject = subjects.map(s => {
-        const subjectGrades = grades.filter(g => g.subjectId === s.id);
-        return {
-            ...s,
-            gradesCount: subjectGrades.length,
-            avgScore: subjectGrades.length ? db.avg(subjectGrades.map(g => g.score)) : 0
-        };
-    }).sort((a, b) => b.avgScore - a.avgScore);
-
-    // Топ-10 студентов
-    const topStudents = students.map(s => {
-        const studGrades = grades.filter(g => g.studentId === s.id);
-        return {
-            ...s,
-            gradesCount: studGrades.length,
-            avgScore: studGrades.length ? db.avg(studGrades.map(g => g.score)) : 0,
-            group: groupsById[s.groupId]
-        };
-    }).filter(s => s.gradesCount > 0)
-      .sort((a, b) => b.avgScore - a.avgScore)
-      .slice(0, 10);
-
-    let html = `
-        <div class="page-header page-header-flex">
-            <div>
-                <h1>Отчёты и статистика</h1>
-                <p class="muted">Аналитика успеваемости студентов</p>
-            </div>
-            <div class="export-buttons">
-                <button id="btn-export-excel" class="btn btn-export btn-excel">
-                    <span class="export-icon">📊</span> Экспорт в Excel
-                </button>
-                <button id="btn-export-pdf" class="btn btn-export btn-pdf">
-                    <span class="export-icon">📄</span> Экспорт в PDF
-                </button>
-            </div>
-        </div>
-
-        <div class="card export-info">
-            <p class="muted" style="margin:0">
-                💡 <strong>Экспорт отчётов:</strong> Excel — для редактирования и работы с данными,
-                PDF — готовый документ для печати и подписи.
-                Отчёт включает сводку по группам, предметам и рейтинг студентов.
-            </p>
-        </div>
-
-        <div class="grid-2">
-            <div class="card">
-                <h2>Распределение оценок</h2>
-                <canvas id="distChart" height="200"></canvas>
-            </div>
-            <div class="card">
-                <h2>Средний балл по группам</h2>
-                ${byGroup.length === 0 ? '<p class="muted">Нет данных</p>' : '<canvas id="groupChart" height="200"></canvas>'}
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Успеваемость по группам</h2>
-            ${byGroup.length === 0 ? '<p class="muted">Нет данных</p>' : `
-            <table class="data-table">
-                <thead>
-                    <tr><th>Группа</th><th>Специальность</th><th>Студентов</th><th>Оценок</th><th>Средний балл</th></tr>
-                </thead>
-                <tbody>
-                    ${byGroup.map(g => `
-                        <tr>
-                            <td><strong>${esc(g.name)}</strong></td>
-                            <td>${esc(g.specialty)}</td>
-                            <td>${g.studentsCount}</td>
-                            <td>${g.gradesCount}</td>
-                            <td><strong>${g.avgScore}</strong> <span class="grade-badge ${db.gradeClass(g.avgScore)}">${db.scoreToLetter(g.avgScore)}</span></td>
-                        </tr>
-                    `).join("")}
-                </tbody>
-            </table>
-            `}
-        </div>
-
-        <div class="card">
-            <h2>Успеваемость по предметам</h2>
-            ${bySubject.length === 0 ? '<p class="muted">Нет данных</p>' : `
-            <table class="data-table">
-                <thead><tr><th>Предмет</th><th>Оценок</th><th>Средний балл</th></tr></thead>
-                <tbody>
-                    ${bySubject.map(s => `
-                        <tr>
-                            <td><strong>${esc(s.name)}</strong></td>
-                            <td>${s.gradesCount}</td>
-                            <td>${s.gradesCount > 0
-                                ? `<strong>${s.avgScore}</strong> <span class="grade-badge ${db.gradeClass(s.avgScore)}">${db.scoreToLetter(s.avgScore)}</span>`
-                                : "—"}</td>
-                        </tr>
-                    `).join("")}
-                </tbody>
-            </table>
-            `}
-        </div>
-
-        <div class="card">
-            <h2>🏆 Рейтинг студентов (топ-10)</h2>
-            ${topStudents.length === 0 ? '<p class="muted">Нет данных</p>' : `
-            <table class="data-table">
-                <thead><tr><th>Место</th><th>ФИО</th><th>Группа</th><th>Оценок</th><th>Средний балл</th></tr></thead>
-                <tbody>
-                    ${topStudents.map((s, i) => `
-                        <tr>
-                            <td>${i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}</td>
-                            <td><strong>${esc(s.fullName)}</strong></td>
-                            <td><span class="badge">${esc(s.group?.name || "—")}</span></td>
-                            <td>${s.gradesCount}</td>
-                            <td><strong>${s.avgScore}</strong> <span class="grade-badge ${db.gradeClass(s.avgScore)}">${db.scoreToLetter(s.avgScore)}</span></td>
-                        </tr>
-                    `).join("")}
-                </tbody>
-            </table>
-            `}
-        </div>
-    `;
-
-    content().innerHTML = html;
-
-    // Графики
-    const counts = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-    grades.forEach(g => counts[db.scoreToLetter(g.score)]++);
-    new Chart(document.getElementById("distChart"), {
-        type: "doughnut",
-        data: {
-            labels: ["A (90-100)", "B (75-89)", "C (60-74)", "D (50-59)", "F (0-49)"],
-            datasets: [{
-                data: [counts.A, counts.B, counts.C, counts.D, counts.F],
-                backgroundColor: ["#16a34a", "#65a30d", "#f59e0b", "#0891b2", "#dc2626"],
-                borderWidth: 2, borderColor: "#fff"
-            }]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { position: "bottom" } }
-        }
-    });
-
-    if (byGroup.length > 0) {
-        new Chart(document.getElementById("groupChart"), {
-            type: "bar",
-            data: {
-                labels: byGroup.map(g => g.name),
-                datasets: [{
-                    label: "Средний балл",
-                    data: byGroup.map(g => g.avgScore),
-                    backgroundColor: "#0d9488", borderRadius: 6
-                }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true, max: 100 } }
-            }
-        });
-    }
-
-    // Обработчики кнопок экспорта
-    const btnExcel = document.getElementById("btn-export-excel");
-    const btnPdf = document.getElementById("btn-export-pdf");
-
-    if (btnExcel) {
-        btnExcel.onclick = async () => {
-            const originalText = btnExcel.innerHTML;
-            btnExcel.disabled = true;
-            btnExcel.innerHTML = '<span class="export-icon">⏳</span> Формирование...';
-            try {
-                await exportToExcel();
-                flash("Excel-отчёт успешно загружен", "success");
-            } catch (err) {
-                console.error(err);
-                flash("Ошибка экспорта: " + err.message, "danger");
-            } finally {
-                btnExcel.disabled = false;
-                btnExcel.innerHTML = originalText;
-            }
-        };
-    }
-
-    if (btnPdf) {
-        btnPdf.onclick = async () => {
-            const originalText = btnPdf.innerHTML;
-            btnPdf.disabled = true;
-            btnPdf.innerHTML = '<span class="export-icon">⏳</span> Формирование...';
-            try {
-                await exportToPDF();
-                flash("PDF-отчёт успешно загружен", "success");
-            } catch (err) {
-                console.error(err);
-                flash("Ошибка экспорта: " + err.message, "danger");
-            } finally {
-                btnPdf.disabled = false;
-                btnPdf.innerHTML = originalText;
-            }
-        };
-    }
-}
-
-// =====================================================
-// СТРАНИЦА: Преподаватели (для админа)
-// =====================================================
-export async function renderTeachers() {
-    const [users, subjects, groups, assignments] = await Promise.all([
-        db.getAll("users"),
-        db.getAll("subjects"),
-        db.getAll("groups"),
-        db.getAll("assignments")
-    ]);
-
-    const teachers = users.filter(u => u.role === "teacher");
-    teachers.sort((a, b) => a.fullName.localeCompare(b.fullName));
-
-    const subjectsById = Object.fromEntries(subjects.map(s => [s.id, s]));
-    const groupsById = Object.fromEntries(groups.map(g => [g.id, g]));
-    const groupsSorted = db.sortGroups(groups);
-    const subjectsSorted = [...subjects].sort((a,b) => a.name.localeCompare(b.name));
-
-    let html = `
-        <div class="page-header">
-            <h1>Преподаватели</h1>
-            <p class="muted">Всего: ${teachers.length} · Назначений: ${assignments.length}</p>
-        </div>
-
-        <div class="card">
-            <p class="muted">
-                ℹ️ Преподаватели регистрируются самостоятельно через форму регистрации,
-                выбрав роль «Преподаватель». Здесь администратор назначает им предметы
-                и группы, в которых они преподают.
-            </p>
-        </div>
-    `;
-
-    if (teachers.length === 0) {
-        html += `<div class="card"><p class="muted text-center" style="padding:30px">Преподаватели ещё не зарегистрированы.</p></div>`;
-        content().innerHTML = html;
-        return;
-    }
-
-    if (subjects.length === 0 || groups.length === 0) {
-        html += `<div class="card"><div class="alert alert-warning">
-            Для назначений нужны предметы и группы.
-            ${subjects.length === 0 ? '<br>→ <a href="#subjects">Добавьте предметы</a>' : ''}
-            ${groups.length === 0 ? '<br>→ <a href="#groups">Добавьте группы</a>' : ''}
-        </div></div>`;
-    } else {
-        // Форма назначения
-        html += `
-            <div class="card">
-                <h2>➕ Назначить предмет преподавателю</h2>
-                <form id="form-add-assignment" class="form-grid">
-                    <div class="form-group">
-                        <label>Преподаватель *</label>
-                        <select name="teacherId" required>
-                            <option value="">— выберите —</option>
-                            ${teachers.map(t => `<option value="${t.uid}">${esc(t.fullName)}</option>`).join("")}
-                        </select>
                     </div>
-                    <div class="form-group">
-                        <label>Предмет *</label>
-                        <select name="subjectId" required>
-                            <option value="">— выберите —</option>
-                            ${subjectsSorted.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Группа *</label>
-                        <select name="groupId" required>
-                            <option value="">— выберите —</option>
-                            ${groupsSorted.map(g => `<option value="${g.id}">${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
-                        </select>
-                    </div>
-                    <div class="form-group form-group-full">
-                        <button type="submit" class="btn btn-primary">+ Назначить</button>
-                    </div>
-                </form>
-            </div>
-        `;
-    }
-
-    // Карточки преподавателей с их назначениями
-    html += `<div class="card"><h2>Преподаватели и их предметы</h2>`;
-    teachers.forEach((t, i) => {
-        const myAssignments = assignments.filter(a => a.teacherId === t.uid);
-        // Группируем по предмету
-        const bySubject = {};
-        myAssignments.forEach(a => {
-            if (!bySubject[a.subjectId]) bySubject[a.subjectId] = [];
-            bySubject[a.subjectId].push(a);
-        });
-
-        html += `
-            <div class="teacher-card">
-                <div class="teacher-card-header">
-                    <div>
-                        <strong>${i + 1}. ${esc(t.fullName)}</strong>
-                        <span class="muted" style="margin-left:8px">${esc(t.email)}</span>
-                    </div>
-                    <span class="badge">${myAssignments.length} назначений</span>
-                </div>
-
-                ${myAssignments.length === 0
-                    ? '<p class="muted" style="margin:10px 0 0;font-size:13px">Назначений пока нет</p>'
-                    : `<div class="assignments-list">
-                        ${Object.entries(bySubject).map(([subId, items]) => {
-                            const sub = subjectsById[subId];
-                            return `
-                                <div class="assignment-block">
-                                    <div class="assignment-subject">📚 ${esc(sub?.name || "Удалённый предмет")}</div>
-                                    <div class="assignment-groups">
-                                        ${items.map(a => {
-                                            const grp = groupsById[a.groupId];
-                                            return `
-                                                <span class="assignment-group-tag">
-                                                    ${esc(grp?.name || "—")}
-                                                    <button class="assignment-remove" data-del-assignment="${a.id}" title="Удалить">×</button>
-                                                </span>
-                                            `;
-                                        }).join("")}
+                    
+                    <div class="card chart-card">
+                        <h4>Топ групп по посещаемости</h4>
+                        <div class="top-groups-list">
+                            ${(stats.top_groups || []).length ? stats.top_groups.map((g, i) => `
+                                <div class="top-group-item">
+                                    <div class="top-group-rank">${i+1}</div>
+                                    <div class="top-group-info">
+                                        <div class="top-group-name">${UI.escapeHtml(g.name)}</div>
+                                        <div class="top-group-rate">${g.rate || 0}%</div>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width:${g.rate||0}%"></div>
+                                        </div>
                                     </div>
                                 </div>
-                            `;
-                        }).join("")}
-                    </div>`
-                }
+                            `).join('') : UI.emptyState('Нет данных', 'Пока нет статистики по группам')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        } catch (e) {
+            content.innerHTML = UI.emptyState('Ошибка загрузки', e.message);
+            console.error(e);
+        }
+    },
+    
+    // ================================================================
+    // РАСПИСАНИЕ
+    // ================================================================
+    async schedule() {
+        const content = document.getElementById('page-content');
+        const today = UI.todayISO();
+        const weekLater = new Date();
+        weekLater.setDate(weekLater.getDate() + 7);
+        
+        content.innerHTML = `
+            <div class="filters-bar">
+                <div class="form-group">
+                    <label>С даты</label>
+                    <input type="date" id="filter-date-from" value="${today}">
+                </div>
+                <div class="form-group">
+                    <label>По дату</label>
+                    <input type="date" id="filter-date-to" value="${weekLater.toISOString().slice(0,10)}">
+                </div>
+                <div class="form-group">
+                    <label>Группа</label>
+                    <select id="filter-group"><option value="">Все группы</option></select>
+                </div>
+                <button class="btn-primary" id="load-schedule-btn">Показать</button>
+                ${App.hasRole('admin', 'teacher') ? 
+                    `<button class="btn-secondary" id="add-schedule-btn">+ Добавить</button>` : ''}
             </div>
+            <div id="schedule-list">${UI.loader()}</div>
         `;
-    });
-    html += `</div>`;
-
-    content().innerHTML = html;
-
-    // === Обработчики ===
-    const formAssign = document.getElementById("form-add-assignment");
-    if (formAssign) {
-        formAssign.onsubmit = async (e) => {
-            e.preventDefault();
-            const f = e.target;
-            const teacherId = f.teacherId.value;
-            const subjectId = f.subjectId.value;
-            const groupId = f.groupId.value;
-
-            // Проверка на дубль
-            const exists = assignments.some(a =>
-                a.teacherId === teacherId && a.subjectId === subjectId && a.groupId === groupId
-            );
-            if (exists) {
-                flash("Такое назначение уже существует", "warning");
+        
+        // Заполняем список групп
+        try {
+            const groups = await API.getGroups();
+            const sel = document.getElementById('filter-group');
+            groups.forEach(g => {
+                sel.innerHTML += `<option value="${g.id}">${UI.escapeHtml(g.name)}</option>`;
+            });
+        } catch (e) {}
+        
+        document.getElementById('load-schedule-btn').onclick = () => this.loadSchedule();
+        const addBtn = document.getElementById('add-schedule-btn');
+        if (addBtn) addBtn.onclick = () => this.scheduleModal();
+        
+        this.loadSchedule();
+    },
+    
+    async loadSchedule() {
+        const dateFrom = document.getElementById('filter-date-from')?.value;
+        const dateTo = document.getElementById('filter-date-to')?.value;
+        const groupId = document.getElementById('filter-group')?.value;
+        const listEl = document.getElementById('schedule-list');
+        
+        listEl.innerHTML = UI.loader();
+        
+        try {
+            const filters = {};
+            if (dateFrom) filters.date_from = dateFrom;
+            if (dateTo) filters.date_to = dateTo;
+            if (groupId) filters.group_id = groupId;
+            
+            const lessons = await API.getSchedule(filters);
+            
+            if (!lessons.length) {
+                listEl.innerHTML = UI.emptyState('Нет занятий', 'В выбранный период занятий не запланировано', '▤');
                 return;
             }
-
-            try {
-                await db.create("assignments", { teacherId, subjectId, groupId });
-                flash("Назначение добавлено", "success");
-                renderTeachers();
-            } catch (err) {
-                flash("Ошибка: " + err.message, "danger");
+            
+            // Группируем по датам
+            const byDate = {};
+            lessons.forEach(l => {
+                if (!byDate[l.lesson_date]) byDate[l.lesson_date] = [];
+                byDate[l.lesson_date].push(l);
+            });
+            
+            let html = '';
+            Object.keys(byDate).sort().forEach(date => {
+                html += `
+                    <div class="schedule-day">
+                        <div class="schedule-day-header">
+                            <span>${UI.formatDateLong(date)}</span>
+                            <span class="day-meta">${byDate[date].length} занятий</span>
+                        </div>
+                `;
+                
+                byDate[date].sort((a,b) => a.lesson_number - b.lesson_number).forEach(l => {
+                    const canMark = App.hasRole('admin', 'teacher');
+                    html += `
+                        <div class="lesson-row">
+                            <div class="lesson-number">${l.lesson_number}</div>
+                            <div>
+                                <div class="lesson-info-title">${UI.escapeHtml(l.subject_name)}</div>
+                                <div class="lesson-info-meta">
+                                    ${UI.escapeHtml(l.group_name)} · ${UI.escapeHtml(l.teacher_name)}
+                                </div>
+                            </div>
+                            <div class="lesson-classroom">каб. ${UI.escapeHtml(l.classroom || '—')}</div>
+                            <div style="display:flex; gap:6px;">
+                                ${canMark ? `
+                                    <button class="btn-primary btn-sm" data-action="attendance" data-id="${l.id}">
+                                        Посещаемость
+                                    </button>
+                                ` : ''}
+                                ${App.hasRole('admin') ? `
+                                    <button class="btn-secondary btn-sm" data-action="delete-schedule" data-id="${l.id}">×</button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `</div>`;
+            });
+            
+            listEl.innerHTML = html;
+            
+            // Привязываем события
+            listEl.querySelectorAll('[data-action="attendance"]').forEach(btn => {
+                btn.onclick = () => this.openAttendance(btn.dataset.id);
+            });
+            listEl.querySelectorAll('[data-action="delete-schedule"]').forEach(btn => {
+                btn.onclick = () => this.deleteSchedule(btn.dataset.id);
+            });
+        } catch (e) {
+            listEl.innerHTML = UI.emptyState('Ошибка', e.message);
+            console.error(e);
+        }
+    },
+    
+    async scheduleModal() {
+        const [groups, subjects, teachers] = await Promise.all([
+            API.getGroups(), API.getSubjects(), API.getTeachers()
+        ]);
+        
+        if (!groups.length || !subjects.length || !teachers.length) {
+            UI.warning('Сначала создайте группы, предметы и зарегистрируйте преподавателей');
+            return;
+        }
+        
+        const html = `
+            <form class="modal-form" id="schedule-form">
+                <div class="form-group">
+                    <label>Группа</label>
+                    <select name="group_id" required>
+                        ${groups.map(g => `<option value="${g.id}">${UI.escapeHtml(g.name)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Предмет</label>
+                    <select name="subject_id" required>
+                        ${subjects.map(s => `<option value="${s.id}">${UI.escapeHtml(s.name)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Преподаватель</label>
+                    <select name="teacher_id" required>
+                        ${teachers.map(t => `<option value="${t.id}">${UI.escapeHtml(t.full_name)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Дата</label>
+                    <input type="date" name="lesson_date" value="${UI.todayISO()}" required>
+                </div>
+                <div class="form-group">
+                    <label>Номер пары (1–8)</label>
+                    <input type="number" name="lesson_number" min="1" max="8" value="1" required>
+                </div>
+                <div class="form-group">
+                    <label>Аудитория</label>
+                    <input type="text" name="classroom" placeholder="например, 301">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="UI.closeModal()">Отмена</button>
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                </div>
+            </form>
+        `;
+        UI.modal('Новое занятие', html);
+        
+        document.getElementById('schedule-form').onsubmit = (e) => this.submitSchedule(e);
+    },
+    
+    async submitSchedule(e) {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const data = Object.fromEntries(fd);
+        data.lesson_number = Number(data.lesson_number);
+        
+        try {
+            await API.createSchedule(data);
+            UI.success('Занятие добавлено');
+            UI.closeModal();
+            this.loadSchedule();
+        } catch (err) {
+            UI.error(err.message);
+        }
+    },
+    
+    async deleteSchedule(id) {
+        if (!await UI.confirm('Удалить занятие из расписания? Все связанные записи посещаемости также будут удалены.')) return;
+        try {
+            await API.deleteSchedule(id);
+            UI.success('Удалено');
+            this.loadSchedule();
+        } catch (err) { UI.error(err.message); }
+    },
+    
+    // ================================================================
+    // ПОСЕЩАЕМОСТЬ
+    // ================================================================
+    async attendance() {
+        const content = document.getElementById('page-content');
+        content.innerHTML = `
+            <div class="filters-bar">
+                <div class="form-group">
+                    <label>Дата</label>
+                    <input type="date" id="att-date" value="${UI.todayISO()}">
+                </div>
+                <button class="btn-primary" id="load-att-btn">Показать занятия</button>
+            </div>
+            <div id="att-lessons-list">${UI.loader()}</div>
+        `;
+        document.getElementById('load-att-btn').onclick = () => this.loadAttendanceList();
+        this.loadAttendanceList();
+    },
+    
+    async loadAttendanceList() {
+        const date = document.getElementById('att-date').value;
+        const listEl = document.getElementById('att-lessons-list');
+        listEl.innerHTML = UI.loader();
+        
+        try {
+            const lessons = await API.getSchedule({ date_from: date, date_to: date });
+            
+            if (!lessons.length) {
+                listEl.innerHTML = UI.emptyState('Нет занятий', 'На эту дату не запланировано занятий', '✓');
+                return;
             }
-        };
-    }
-
-    document.querySelectorAll("[data-del-assignment]").forEach(btn => {
-        btn.onclick = async () => {
-            if (!confirm("Удалить назначение?")) return;
+            
+            listEl.innerHTML = `
+                <div class="schedule-day">
+                    <div class="schedule-day-header">
+                        <span>${UI.formatDateLong(date)}</span>
+                        <span class="day-meta">Выберите занятие для отметки посещаемости</span>
+                    </div>
+                    ${lessons.map(l => `
+                        <div class="lesson-row" data-id="${l.id}" style="cursor:pointer">
+                            <div class="lesson-number">${l.lesson_number}</div>
+                            <div>
+                                <div class="lesson-info-title">${UI.escapeHtml(l.subject_name)}</div>
+                                <div class="lesson-info-meta">
+                                    ${UI.escapeHtml(l.group_name)} · ${UI.escapeHtml(l.teacher_name)}
+                                </div>
+                            </div>
+                            <div class="lesson-classroom">каб. ${UI.escapeHtml(l.classroom || '—')}</div>
+                            <button class="btn-primary btn-sm">Отметить →</button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+            listEl.querySelectorAll('.lesson-row').forEach(row => {
+                row.onclick = () => this.openAttendance(row.dataset.id);
+            });
+        } catch (e) {
+            listEl.innerHTML = UI.emptyState('Ошибка', e.message);
+            console.error(e);
+        }
+    },
+    
+    async openAttendance(scheduleId) {
+        const content = document.getElementById('page-content');
+        document.getElementById('page-title').textContent = 'Отметка посещаемости';
+        content.innerHTML = UI.loader();
+        
+        try {
+            const data = await API.getAttendance(scheduleId);
+            const { lesson, students } = data;
+            
+            window._attendanceState = {};
+            students.forEach(s => {
+                window._attendanceState[s.student_id] = s.status || 'present';
+            });
+            
+            content.innerHTML = `
+                <div class="card" style="margin-bottom: 20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                        <div>
+                            <h3 style="font-family: var(--font-display); font-size: 24px;">
+                                ${UI.escapeHtml(lesson.subject_name)}
+                            </h3>
+                            <div style="color: var(--text-muted); margin-top: 4px;">
+                                ${UI.escapeHtml(lesson.group_name)} · 
+                                ${UI.formatDateLong(lesson.lesson_date)} · 
+                                Пара ${lesson.lesson_number} · 
+                                каб. ${UI.escapeHtml(lesson.classroom || '—')}
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn-secondary" id="back-to-schedule">← К расписанию</button>
+                            <button class="btn-success" id="save-attendance">Сохранить</button>
+                        </div>
+                    </div>
+                </div>
+                
+                ${students.length === 0 ? UI.emptyState('В группе нет студентов', 'Добавьте студентов в группу', '⚇') : `
+                    <div style="display:flex; gap:8px; margin-bottom: 16px;">
+                        <button class="btn-secondary btn-sm" id="mark-all-present">Все присутствуют</button>
+                        <button class="btn-secondary btn-sm" id="mark-all-absent">Все отсутствуют</button>
+                    </div>
+                    
+                    <div class="attendance-list" id="att-list">
+                        ${students.map(s => this.attendanceRow(s)).join('')}
+                    </div>
+                `}
+            `;
+            
+            // События
+            document.getElementById('back-to-schedule').onclick = () => App.navigate('schedule');
+            const saveBtn = document.getElementById('save-attendance');
+            if (saveBtn) saveBtn.onclick = () => this.saveAttendance(scheduleId);
+            
+            const markPresent = document.getElementById('mark-all-present');
+            if (markPresent) markPresent.onclick = () => this.markAll('present');
+            const markAbsent = document.getElementById('mark-all-absent');
+            if (markAbsent) markAbsent.onclick = () => this.markAll('absent');
+            
+            // Кнопки статусов
+            document.querySelectorAll('#att-list .status-btn').forEach(btn => {
+                btn.onclick = () => this.setStatus(btn.dataset.studentId, btn.dataset.status, btn);
+            });
+        } catch (e) {
+            content.innerHTML = UI.emptyState('Ошибка', e.message);
+            console.error(e);
+        }
+    },
+    
+    attendanceRow(s) {
+        const status = (window._attendanceState && window._attendanceState[s.student_id]) || 'present';
+        return `
+            <div class="attendance-row" data-student-id="${s.student_id}">
+                <div class="attendance-student">
+                    <div class="user-avatar" style="width:36px;height:36px;font-size:13px;">
+                        ${UI.avatarLetters(s.full_name)}
+                    </div>
+                    <div>
+                        <div class="attendance-name">${UI.escapeHtml(s.full_name || '—')}</div>
+                        <div class="attendance-card">№ ${UI.escapeHtml(s.student_card || '—')}</div>
+                    </div>
+                </div>
+                <div class="status-selector">
+                    <button class="status-btn present ${status==='present'?'active':''}" 
+                        data-student-id="${s.student_id}" data-status="present">Присут.</button>
+                    <button class="status-btn late ${status==='late'?'active':''}" 
+                        data-student-id="${s.student_id}" data-status="late">Опоздал</button>
+                    <button class="status-btn excused ${status==='excused'?'active':''}" 
+                        data-student-id="${s.student_id}" data-status="excused">Уваж.</button>
+                    <button class="status-btn absent ${status==='absent'?'active':''}" 
+                        data-student-id="${s.student_id}" data-status="absent">Отсут.</button>
+                </div>
+                <div></div>
+            </div>
+        `;
+    },
+    
+    setStatus(studentId, status, btn) {
+        if (!window._attendanceState) window._attendanceState = {};
+        window._attendanceState[studentId] = status;
+        
+        const row = btn.closest('.attendance-row');
+        row.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    },
+    
+    markAll(status) {
+        document.querySelectorAll('#att-list .attendance-row').forEach(row => {
+            const id = row.dataset.studentId;
+            window._attendanceState[id] = status;
+            row.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
+            const btn = row.querySelector(`.status-btn.${status}`);
+            if (btn) btn.classList.add('active');
+        });
+    },
+    
+    async saveAttendance(scheduleId) {
+        const records = Object.entries(window._attendanceState).map(([id, status]) => ({
+            student_id: id, status
+        }));
+        
+        try {
+            await API.markAttendance(scheduleId, records);
+            UI.success('Посещаемость сохранена');
+        } catch (e) {
+            UI.error(e.message);
+            console.error(e);
+        }
+    },
+    
+    // ================================================================
+    // СТУДЕНТЫ
+    // ================================================================
+    async students() {
+        const content = document.getElementById('page-content');
+        content.innerHTML = UI.loader();
+        
+        try {
+            const [students, groups] = await Promise.all([API.getStudents(), API.getGroups()]);
+            
+            const groupOptions = `<option value="">Все группы</option>` +
+                groups.map(g => `<option value="${g.id}">${UI.escapeHtml(g.name)}</option>`).join('');
+            
+            content.innerHTML = `
+                <div class="filters-bar">
+                    <div class="form-group">
+                        <label>Фильтр по группе</label>
+                        <select id="students-filter-group">
+                            ${groupOptions}
+                        </select>
+                    </div>
+                    ${App.hasRole('admin') ? 
+                        `<button class="btn-primary" id="add-student-btn">+ Добавить запись студента</button>` : ''}
+                </div>
+                <div class="info-note">
+                    ℹ Регистрация студентов происходит через форму регистрации. 
+                    Здесь администратор привязывает зарегистрированных пользователей к группам.
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ФИО</th>
+                                <th>№ билета</th>
+                                <th>Группа</th>
+                                <th>Телефон</th>
+                                <th>Email</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="students-tbody">
+                            ${this.renderStudents(students)}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            window._allStudents = students;
+            
+            document.getElementById('students-filter-group').onchange = () => this.filterStudents();
+            const addBtn = document.getElementById('add-student-btn');
+            if (addBtn) addBtn.onclick = () => this.studentModal();
+            this.bindStudentActions();
+        } catch (e) {
+            content.innerHTML = UI.emptyState('Ошибка', e.message);
+            console.error(e);
+        }
+    },
+    
+    bindStudentActions() {
+        document.querySelectorAll('[data-action="student-report"]').forEach(btn => {
+            btn.onclick = () => this.studentReport(btn.dataset.id);
+        });
+        document.querySelectorAll('[data-action="delete-student"]').forEach(btn => {
+            btn.onclick = () => this.deleteStudent(btn.dataset.id);
+        });
+    },
+    
+    renderStudents(students) {
+        if (!students.length) {
+            return `<tr><td colspan="6">${UI.emptyState('Нет студентов', 'Добавьте студентов в систему', '⚇')}</td></tr>`;
+        }
+        return students.map(s => `
+            <tr>
+                <td>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <div class="user-avatar" style="width:32px;height:32px;font-size:12px;">
+                            ${UI.avatarLetters(s.full_name)}
+                        </div>
+                        <strong>${UI.escapeHtml(s.full_name || '—')}</strong>
+                    </div>
+                </td>
+                <td>${UI.escapeHtml(s.student_card || '—')}</td>
+                <td><span class="badge badge-info">${UI.escapeHtml(s.group_name || '—')}</span></td>
+                <td>${UI.escapeHtml(s.phone || '—')}</td>
+                <td>${UI.escapeHtml(s.email || '—')}</td>
+                <td>
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn-secondary btn-sm" data-action="student-report" data-id="${s.id}">Отчёт</button>
+                        ${App.hasRole('admin') ? `
+                            <button class="btn-danger btn-sm" data-action="delete-student" data-id="${s.id}">×</button>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    },
+    
+    filterStudents() {
+        const groupId = document.getElementById('students-filter-group').value;
+        const filtered = groupId 
+            ? window._allStudents.filter(s => s.group_id == groupId)
+            : window._allStudents;
+        document.getElementById('students-tbody').innerHTML = this.renderStudents(filtered);
+        this.bindStudentActions();
+    },
+    
+    async studentModal() {
+        // Получаем пользователей с ролью student, у которых ещё нет записи студента
+        const { db } = await import('./firebase-config.js');
+        const { collection, getDocs, query, where } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+        
+        const usersSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'student')));
+        const allStudentsSnap = await getDocs(collection(db, 'students'));
+        const linkedUserIds = new Set(allStudentsSnap.docs.map(d => d.data().user_id));
+        
+        const availableUsers = usersSnap.docs.filter(d => !linkedUserIds.has(d.id));
+        const groups = await API.getGroups();
+        
+        if (!availableUsers.length) {
+            UI.warning('Нет зарегистрированных пользователей с ролью студента, не привязанных к группе');
+            return;
+        }
+        if (!groups.length) {
+            UI.warning('Сначала создайте хотя бы одну группу');
+            return;
+        }
+        
+        const html = `
+            <form class="modal-form" id="student-form">
+                <div class="form-group">
+                    <label>Пользователь</label>
+                    <select name="user_id" required>
+                        ${availableUsers.map(u => `<option value="${u.id}">${UI.escapeHtml(u.data().full_name)} (${u.data().email})</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Группа</label>
+                    <select name="group_id" required>
+                        ${groups.map(g => `<option value="${g.id}">${UI.escapeHtml(g.name)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Номер студенческого билета</label>
+                    <input type="text" name="student_card" required>
+                </div>
+                <div class="form-group">
+                    <label>Телефон</label>
+                    <input type="tel" name="phone" placeholder="+7...">
+                </div>
+                <div class="form-group">
+                    <label>Дата рождения</label>
+                    <input type="date" name="birth_date">
+                </div>
+                <div class="form-group">
+                    <label>Дата зачисления</label>
+                    <input type="date" name="enrollment_date" value="${UI.todayISO()}">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="UI.closeModal()">Отмена</button>
+                    <button type="submit" class="btn-primary">Создать</button>
+                </div>
+            </form>
+        `;
+        UI.modal('Добавить студента', html);
+        
+        document.getElementById('student-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
             try {
-                await db.remove("assignments", btn.dataset.delAssignment);
-                flash("Назначение удалено", "success");
-                renderTeachers();
-            } catch (err) {
-                flash("Ошибка: " + err.message, "danger");
-            }
+                await API.createStudent(data);
+                UI.success('Студент добавлен');
+                UI.closeModal();
+                this.students();
+            } catch (err) { UI.error(err.message); }
         };
-    });
-}
+    },
+    
+    async deleteStudent(id) {
+        if (!await UI.confirm('Удалить запись студента? Учётная запись пользователя останется.')) return;
+        try {
+            await API.deleteStudent(id);
+            UI.success('Удалено');
+            this.students();
+        } catch (err) { UI.error(err.message); }
+    },
+    
+    async studentReport(id) {
+        try {
+            const data = await API.getStudentReport(id);
+            const { stats, history } = data;
+            
+            const html = `
+                ${stats ? `
+                    <div style="margin-bottom:20px;">
+                        <h4 style="margin-bottom:12px;">${UI.escapeHtml(stats.student_name)}</h4>
+                        <div class="status-distribution">
+                            <div class="status-dist-item present">
+                                <div class="status-dist-label">Присутствовал</div>
+                                <div class="status-dist-value">${stats.present_count}</div>
+                            </div>
+                            <div class="status-dist-item absent">
+                                <div class="status-dist-label">Пропусков</div>
+                                <div class="status-dist-value">${stats.absent_count}</div>
+                            </div>
+                            <div class="status-dist-item late">
+                                <div class="status-dist-label">Опозданий</div>
+                                <div class="status-dist-value">${stats.late_count}</div>
+                            </div>
+                            <div class="status-dist-item excused">
+                                <div class="status-dist-label">Посещаемость</div>
+                                <div class="status-dist-value">${stats.attendance_percent}%</div>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+                <h4 style="margin-bottom:8px;">История посещений</h4>
+                <div style="max-height: 300px; overflow-y: auto;">
+                    ${history.length ? history.map(h => `
+                        <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom: 1px solid var(--border-light);">
+                            <div>
+                                <div style="font-weight:600;">${UI.escapeHtml(h.subject_name)}</div>
+                                <div style="color:var(--text-muted); font-size:13px;">
+                                    ${UI.formatDate(h.lesson_date)} · Пара ${h.lesson_number}
+                                </div>
+                            </div>
+                            ${UI.statusBadge(h.status)}
+                        </div>
+                    `).join('') : '<div style="color:var(--text-muted); padding:20px; text-align:center;">История пуста</div>'}
+                </div>
+            `;
+            UI.modal('Отчёт по студенту', html);
+        } catch (e) { UI.error(e.message); }
+    },
+    
+    // ================================================================
+    // ГРУППЫ
+    // ================================================================
+    async groups() {
+        const content = document.getElementById('page-content');
+        content.innerHTML = UI.loader();
+        try {
+            const groups = await API.getGroups();
+            content.innerHTML = `
+                ${App.hasRole('admin') ? 
+                    `<div style="margin-bottom:20px;"><button class="btn-primary" id="add-group-btn">+ Новая группа</button></div>` : ''}
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Группа</th>
+                                <th>Специальность</th>
+                                <th>Курс</th>
+                                <th>Студентов</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${groups.length ? groups.map(g => `
+                                <tr>
+                                    <td><strong>${UI.escapeHtml(g.name)}</strong></td>
+                                    <td>${UI.escapeHtml(g.specialty)}</td>
+                                    <td><span class="badge badge-info">${g.course} курс</span></td>
+                                    <td>${g.students_count}</td>
+                                    <td>
+                                        ${App.hasRole('admin') ? `
+                                            <button class="btn-danger btn-sm" data-action="delete-group" data-id="${g.id}">×</button>
+                                        ` : ''}
+                                    </td>
+                                </tr>
+                            `).join('') : `<tr><td colspan="5">${UI.emptyState('Нет групп', 'Создайте первую группу', '▥')}</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            const addBtn = document.getElementById('add-group-btn');
+            if (addBtn) addBtn.onclick = () => this.groupModal();
+            
+            document.querySelectorAll('[data-action="delete-group"]').forEach(btn => {
+                btn.onclick = () => this.deleteGroup(btn.dataset.id);
+            });
+        } catch (e) { 
+            content.innerHTML = UI.emptyState('Ошибка', e.message);
+            console.error(e);
+        }
+    },
+    
+    groupModal() {
+        const html = `
+            <form class="modal-form" id="group-form">
+                <div class="form-group">
+                    <label>Название группы</label>
+                    <input type="text" name="name" required placeholder="например, ИС-21">
+                </div>
+                <div class="form-group">
+                    <label>Специальность</label>
+                    <input type="text" name="specialty" required placeholder="например, Информационные системы">
+                </div>
+                <div class="form-group">
+                    <label>Курс</label>
+                    <select name="course" required>
+                        <option value="1">1 курс</option>
+                        <option value="2">2 курс</option>
+                        <option value="3">3 курс</option>
+                        <option value="4">4 курс</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="UI.closeModal()">Отмена</button>
+                    <button type="submit" class="btn-primary">Создать</button>
+                </div>
+            </form>
+        `;
+        UI.modal('Новая группа', html);
+        
+        document.getElementById('group-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            try {
+                await API.createGroup(data);
+                UI.success('Группа создана');
+                UI.closeModal();
+                this.groups();
+            } catch (err) { UI.error(err.message); }
+        };
+    },
+    
+    async deleteGroup(id) {
+        if (!await UI.confirm('Удалить группу?')) return;
+        try {
+            await API.deleteGroup(id);
+            UI.success('Удалено');
+            this.groups();
+        } catch (err) { UI.error(err.message); }
+    },
+    
+    // ================================================================
+    // ПРЕПОДАВАТЕЛИ
+    // ================================================================
+    async teachers() {
+        const content = document.getElementById('page-content');
+        content.innerHTML = UI.loader();
+        try {
+            const teachers = await API.getTeachers();
+            content.innerHTML = `
+                <div class="info-note">
+                    ℹ Преподаватели регистрируются через форму регистрации с выбором роли «Преподаватель»
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ФИО</th>
+                                <th>Должность</th>
+                                <th>Кафедра</th>
+                                <th>Телефон</th>
+                                <th>Email</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${teachers.length ? teachers.map(t => `
+                                <tr>
+                                    <td>
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <div class="user-avatar" style="width:32px;height:32px;font-size:12px;">
+                                                ${UI.avatarLetters(t.full_name)}
+                                            </div>
+                                            <strong>${UI.escapeHtml(t.full_name)}</strong>
+                                        </div>
+                                    </td>
+                                    <td>${UI.escapeHtml(t.position || '—')}</td>
+                                    <td>${UI.escapeHtml(t.department || '—')}</td>
+                                    <td>${UI.escapeHtml(t.phone || '—')}</td>
+                                    <td>${UI.escapeHtml(t.email || '—')}</td>
+                                </tr>
+                            `).join('') : `<tr><td colspan="5">${UI.emptyState('Нет преподавателей', 'Зарегистрируйте преподавателя через форму регистрации', '⚐')}</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } catch (e) { 
+            content.innerHTML = UI.emptyState('Ошибка', e.message);
+            console.error(e);
+        }
+    },
+    
+    // ================================================================
+    // ПРЕДМЕТЫ
+    // ================================================================
+    async subjects() {
+        const content = document.getElementById('page-content');
+        content.innerHTML = UI.loader();
+        try {
+            const subjects = await API.getSubjects();
+            content.innerHTML = `
+                ${App.hasRole('admin') ? 
+                    `<div style="margin-bottom:20px;"><button class="btn-primary" id="add-subject-btn">+ Новый предмет</button></div>` : ''}
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr><th>Название</th><th>Код</th><th>Часов</th><th>Описание</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            ${subjects.length ? subjects.map(s => `
+                                <tr>
+                                    <td><strong>${UI.escapeHtml(s.name)}</strong></td>
+                                    <td><span class="badge badge-default">${UI.escapeHtml(s.code || '—')}</span></td>
+                                    <td>${s.hours_total || 0}</td>
+                                    <td style="color:var(--text-secondary);">${UI.escapeHtml(s.description || '')}</td>
+                                    <td>
+                                        ${App.hasRole('admin') ? `
+                                            <button class="btn-danger btn-sm" data-action="delete-subject" data-id="${s.id}">×</button>
+                                        ` : ''}
+                                    </td>
+                                </tr>
+                            `).join('') : `<tr><td colspan="5">${UI.emptyState('Нет предметов', 'Добавьте первый предмет', '▣')}</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            const addBtn = document.getElementById('add-subject-btn');
+            if (addBtn) addBtn.onclick = () => this.subjectModal();
+            
+            document.querySelectorAll('[data-action="delete-subject"]').forEach(btn => {
+                btn.onclick = async () => {
+                    if (!await UI.confirm('Удалить предмет?')) return;
+                    try {
+                        await API.deleteSubject(btn.dataset.id);
+                        UI.success('Удалено');
+                        this.subjects();
+                    } catch (err) { UI.error(err.message); }
+                };
+            });
+        } catch (e) { 
+            content.innerHTML = UI.emptyState('Ошибка', e.message); 
+            console.error(e);
+        }
+    },
+    
+    subjectModal() {
+        const html = `
+            <form class="modal-form" id="subject-form">
+                <div class="form-group">
+                    <label>Название</label>
+                    <input type="text" name="name" required placeholder="например, Программирование на Python">
+                </div>
+                <div class="form-group">
+                    <label>Код</label>
+                    <input type="text" name="code" placeholder="например, PYT-101">
+                </div>
+                <div class="form-group">
+                    <label>Часов всего</label>
+                    <input type="number" name="hours_total" value="0" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Описание</label>
+                    <textarea name="description" rows="3"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="UI.closeModal()">Отмена</button>
+                    <button type="submit" class="btn-primary">Создать</button>
+                </div>
+            </form>
+        `;
+        UI.modal('Новый предмет', html);
+        
+        document.getElementById('subject-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            try {
+                await API.createSubject(data);
+                UI.success('Предмет создан');
+                UI.closeModal();
+                this.subjects();
+            } catch (err) { UI.error(err.message); }
+        };
+    },
+    
+    // ================================================================
+    // ОТЧЁТЫ
+    // ================================================================
+    async reports() {
+        const content = document.getElementById('page-content');
+        content.innerHTML = UI.loader();
+        try {
+            const groups = await API.getGroups();
+            
+            if (!groups.length) {
+                content.innerHTML = UI.emptyState('Нет групп', 'Сначала создайте группы и добавьте студентов', '◷');
+                return;
+            }
+            
+            const monthAgo = new Date();
+            monthAgo.setMonth(monthAgo.getMonth() - 1);
+            
+            content.innerHTML = `
+                <div class="filters-bar">
+                    <div class="form-group">
+                        <label>Группа</label>
+                        <select id="rep-group">
+                            ${groups.map(g => `<option value="${g.id}">${UI.escapeHtml(g.name)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>С даты</label>
+                        <input type="date" id="rep-from" value="${monthAgo.toISOString().slice(0,10)}">
+                    </div>
+                    <div class="form-group">
+                        <label>По дату</label>
+                        <input type="date" id="rep-to" value="${UI.todayISO()}">
+                    </div>
+                    <button class="btn-primary" id="load-rep-btn">Сформировать</button>
+                    <button class="btn-secondary" id="export-rep-btn">Экспорт CSV</button>
+                </div>
+                <div id="report-result"></div>
+            `;
+            
+            document.getElementById('load-rep-btn').onclick = () => this.loadReport();
+            document.getElementById('export-rep-btn').onclick = () => this.exportReport();
+            
+            this.loadReport();
+        } catch (e) {
+            content.innerHTML = UI.emptyState('Ошибка', e.message);
+            console.error(e);
+        }
+    },
+    
+    async loadReport() {
+        const groupId = document.getElementById('rep-group').value;
+        const from = document.getElementById('rep-from').value;
+        const to = document.getElementById('rep-to').value;
+        const el = document.getElementById('report-result');
+        
+        el.innerHTML = UI.loader();
+        try {
+            const data = await API.getGroupReport(groupId, from, to);
+            
+            el.innerHTML = `
+                <div class="table-container">
+                    <div class="table-header">
+                        <h3>Отчёт по посещаемости</h3>
+                        <span style="color:var(--text-muted);">${UI.formatDate(from)} — ${UI.formatDate(to)}</span>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Студент</th>
+                                <th>№ билета</th>
+                                <th>Всего</th>
+                                <th>Присут.</th>
+                                <th>Опозд.</th>
+                                <th>Пропуски</th>
+                                <th>% посещ.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.length ? data.map(s => {
+                                const rate = s.attendance_percent || 0;
+                                const badgeClass = rate >= 85 ? 'badge-success' : 
+                                                   rate >= 70 ? 'badge-warning' : 'badge-danger';
+                                return `
+                                    <tr>
+                                        <td><strong>${UI.escapeHtml(s.student_name)}</strong></td>
+                                        <td>${UI.escapeHtml(s.student_card)}</td>
+                                        <td>${s.total_lessons}</td>
+                                        <td>${s.present}</td>
+                                        <td>${s.late_count}</td>
+                                        <td>${s.absent}</td>
+                                        <td><span class="badge ${badgeClass}">${rate}%</span></td>
+                                    </tr>
+                                `;
+                            }).join('') : `<tr><td colspan="7">${UI.emptyState('Нет данных за этот период')}</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            window._reportData = data;
+        } catch (e) {
+            el.innerHTML = UI.emptyState('Ошибка', e.message);
+            console.error(e);
+        }
+    },
+    
+    exportReport() {
+        const data = window._reportData;
+        if (!data || !data.length) { UI.warning('Нет данных для экспорта'); return; }
+        
+        const headers = ['Студент','№ билета','Всего','Присутствовал','Опоздал','Пропустил','% посещаемости'];
+        const rows = data.map(s => [
+            s.student_name, s.student_card, s.total_lessons || 0,
+            s.present || 0, s.late_count || 0, s.absent || 0,
+            (s.attendance_percent || 0) + '%'
+        ]);
+        
+        const csv = '\uFEFF' + [headers, ...rows]
+            .map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','))
+            .join('\n');
+        
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `attendance_report_${UI.todayISO()}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        UI.success('Файл скачан');
+    },
+    
+    // ================================================================
+    // ИМПОРТ СТУДЕНТОВ ИЗ EXCEL
+    // ================================================================
+    async import() {
+        const content = document.getElementById('page-content');
+        content.innerHTML = `
+            <div class="info-note">
+                ℹ Загрузите файл «Контингент» (.xls/.xlsx), выгруженный из НОБД.
+                Система автоматически создаст группы и добавит студентов.
+                Повторная загрузка не создаёт дубликатов (проверка по номеру студбилета).
+            </div>
+            
+            <div class="card" style="margin-bottom:20px;">
+                <h4 style="margin-bottom:16px;">Шаг 1. Выберите файл</h4>
+                <input type="file" id="import-file" accept=".xls,.xlsx"
+                    style="padding:12px; border:1.5px dashed var(--border); border-radius:var(--radius-md); width:100%; cursor:pointer; background:var(--bg-primary);">
+                <div id="import-preview" style="margin-top:16px;"></div>
+            </div>
+            
+            <div id="import-action"></div>
+            <div id="import-progress"></div>
+        `;
+        
+        document.getElementById('import-file').onchange = (e) => this.handleImportFile(e);
+    },
+    
+    async handleImportFile(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const previewEl = document.getElementById('import-preview');
+        previewEl.innerHTML = UI.loader();
+        
+        try {
+            // Загружаем библиотеку SheetJS (для чтения .xls/.xlsx)
+            if (!window.XLSX) {
+                await this.loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+            }
+            
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+            
+            // Первая строка — заголовки. Данные с индекса 1.
+            // Индексы столбцов (как в файле НОБД):
+            //  2 = ИИН, 3 = Фамилия, 4 = Имя, 5 = Отчество,
+            //  6 = дата рожд., 32 = телефон, 33 = email,
+            //  38 = курс, 41 = код группы, 49 = специальность
+            const students = [];
+            for (let i = 1; i < rows.length; i++) {
+                const r = rows[i];
+                if (!r || !r[3] || !r[4]) continue; // нет фамилии/имени — пропускаем
+                
+                const fam = String(r[3] || '').trim();
+                const name = String(r[4] || '').trim();
+                const otch = String(r[5] || '').trim();
+                const fullName = [fam, name, otch].filter(Boolean).join(' ');
+                
+                const groupName = String(r[41] || '').trim().replace(/\s+/g, ' ');
+                if (!groupName) continue;
+                
+                // Курс: берём цифру из «4 курс» или из первой цифры кода группы
+                let course = parseInt(String(r[38] || '').match(/\d/)?.[0]);
+                if (!course) course = parseInt(groupName.match(/\d/)?.[0]) || 1;
+                
+                // Дата рождения → YYYY-MM-DD
+                let birth = '';
+                if (r[6]) {
+                    const d = new Date(r[6]);
+                    if (!isNaN(d)) birth = d.toISOString().slice(0, 10);
+                }
+                
+                students.push({
+                    full_name: fullName,
+                    student_card: String(r[2] || '').trim(),
+                    group_name: groupName,
+                    specialty: String(r[49] || '').trim(),
+                    course,
+                    phone: String(r[32] || '').trim(),
+                    email: String(r[33] || '').trim(),
+                    birth_date: birth
+                });
+            }
+            
+            window._importData = students;
+            
+            // Считаем уникальные группы
+            const groupsSet = new Set(students.map(s => s.group_name));
+            
+            previewEl.innerHTML = `
+                <div style="display:flex; gap:24px; flex-wrap:wrap; padding:16px; background:var(--bg-tertiary); border-radius:var(--radius-md);">
+                    <div>
+                        <div class="stat-label">Студентов в файле</div>
+                        <div style="font-family:var(--font-display); font-size:28px; font-weight:700; color:var(--accent);">${students.length}</div>
+                    </div>
+                    <div>
+                        <div class="stat-label">Групп</div>
+                        <div style="font-family:var(--font-display); font-size:28px; font-weight:700; color:var(--accent);">${groupsSet.size}</div>
+                    </div>
+                </div>
+                <div style="margin-top:12px; font-size:13px; color:var(--text-muted);">
+                    Примеры: ${students.slice(0,3).map(s => UI.escapeHtml(s.full_name + ' (' + s.group_name + ')')).join(', ')}…
+                </div>
+            `;
+            
+            document.getElementById('import-action').innerHTML = `
+                <div class="card">
+                    <h4 style="margin-bottom:12px;">Шаг 2. Загрузить в базу</h4>
+                    <p style="color:var(--text-secondary); margin-bottom:16px; font-size:14px;">
+                        Будет создано ${groupsSet.size} групп и добавлено до ${students.length} студентов.
+                        Загрузка может занять 1–3 минуты — не закрывайте вкладку.
+                    </p>
+                    <button class="btn-primary btn-large" id="start-import-btn">
+                        Начать импорт
+                    </button>
+                </div>
+            `;
+            
+            document.getElementById('start-import-btn').onclick = () => this.startImport();
+            
+        } catch (err) {
+            previewEl.innerHTML = UI.emptyState('Ошибка чтения файла', err.message);
+            console.error(err);
+        }
+    },
+    
+    loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = () => reject(new Error('Не удалось загрузить библиотеку чтения Excel'));
+            document.head.appendChild(s);
+        });
+    },
+    
+    async startImport() {
+        const students = window._importData;
+        if (!students || !students.length) { UI.warning('Сначала выберите файл'); return; }
+        
+        const btn = document.getElementById('start-import-btn');
+        btn.disabled = true;
+        btn.textContent = 'Импорт идёт...';
+        
+        const progressEl = document.getElementById('import-progress');
+        progressEl.innerHTML = `
+            <div class="card" style="margin-top:20px;">
+                <h4 style="margin-bottom:12px;">Прогресс</h4>
+                <div class="progress-bar" style="height:14px;">
+                    <div class="progress-fill" id="imp-bar" style="width:0%"></div>
+                </div>
+                <div id="imp-text" style="margin-top:12px; font-size:14px; color:var(--text-secondary);">
+                    Подготовка...
+                </div>
+            </div>
+        `;
+        
+        try {
+            const result = await API.importStudents(students, (processed, total, added, skipped) => {
+                const pct = Math.round(processed / total * 100);
+                const bar = document.getElementById('imp-bar');
+                const text = document.getElementById('imp-text');
+                if (bar) bar.style.width = pct + '%';
+                if (text) text.textContent = 
+                    `Обработано ${processed} из ${total} · добавлено ${added}, пропущено (дубликаты) ${skipped}`;
+            });
+            
+            document.getElementById('imp-text').innerHTML = 
+                `<strong style="color:var(--success);">Готово!</strong> Добавлено студентов: ${result.added}. ` +
+                `Пропущено дубликатов: ${result.skipped}.`;
+            
+            UI.success(`Импорт завершён: добавлено ${result.added} студентов`);
+            btn.textContent = 'Импорт завершён';
+            
+        } catch (err) {
+            document.getElementById('imp-text').innerHTML = 
+                `<strong style="color:var(--danger);">Ошибка:</strong> ${UI.escapeHtml(err.message)}`;
+            UI.error('Ошибка импорта: ' + err.message);
+            btn.disabled = false;
+            btn.textContent = 'Повторить';
+            console.error(err);
+        }
+    },
+};
+
+window.Pages = Pages;

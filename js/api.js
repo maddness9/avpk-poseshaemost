@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import {
     collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc,
-    deleteDoc, query, where, orderBy, limit, Timestamp
+    deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 
@@ -568,6 +568,118 @@ export const API = {
         
         result.sort((a, b) => a.student_name.localeCompare(b.student_name));
         return result;
+    },
+    
+    // ================================================================
+    // МАССОВЫЙ ИМПОРТ СТУДЕНТОВ (из Excel)
+    // ================================================================
+    
+    // Получить карту существующих групп { название -> id }
+    async getGroupsMap() {
+        const snap = await getDocs(collection(db, 'groups'));
+        const map = {};
+        snap.docs.forEach(d => { map[d.data().name] = d.id; });
+        return map;
+    },
+    
+    // Создать группу и вернуть её id (используется при импорте)
+    async ensureGroup(name, specialty, course) {
+        const ref = await addDoc(collection(db, 'groups'), {
+            name, specialty: specialty || '—', course: Number(course) || 1,
+            created_at: Timestamp.now()
+        });
+        return ref.id;
+    },
+    
+    // Получить множество уже существующих студбилетов (чтобы не дублировать)
+    async getExistingStudentCards() {
+        const snap = await getDocs(collection(db, 'students'));
+        const set = new Set();
+        snap.docs.forEach(d => { 
+            const c = d.data().student_card;
+            if (c) set.add(String(c)); 
+        });
+        return set;
+    },
+    
+    // Импорт пакета студентов.
+    // students: массив объектов { full_name, student_card, group_name, specialty, course, phone, birth_date, email }
+    // onProgress: callback(processed, total)
+    async importStudents(students, onProgress) {
+        const groupsMap = await this.getGroupsMap();
+        const existingCards = await this.getExistingStudentCards();
+        
+        let added = 0, skipped = 0, processed = 0;
+        const total = students.length;
+        
+        // Пишем пакетами по 400 операций (лимит batch — 500)
+        let batch = writeBatch(db);
+        let opsInBatch = 0;
+        
+        const commitBatch = async () => {
+            if (opsInBatch > 0) {
+                await batch.commit();
+                batch = writeBatch(db);
+                opsInBatch = 0;
+            }
+        };
+        
+        for (const s of students) {
+            processed++;
+            
+            // Пропускаем дубликаты по студбилету
+            if (s.student_card && existingCards.has(String(s.student_card))) {
+                skipped++;
+                if (onProgress && processed % 25 === 0) onProgress(processed, total, added, skipped);
+                continue;
+            }
+            
+            // Создаём группу, если её ещё нет
+            let groupId = groupsMap[s.group_name];
+            if (!groupId) {
+                groupId = await this.ensureGroup(s.group_name, s.specialty, s.course);
+                groupsMap[s.group_name] = groupId;
+            }
+            
+            // Создаём пользователя-студента (без аккаунта Auth — только профиль)
+            const userRef = doc(collection(db, 'users'));
+            batch.set(userRef, {
+                full_name: s.full_name,
+                email: s.email || '',
+                role: 'student',
+                is_active: true,
+                imported: true,
+                created_at: Timestamp.now()
+            });
+            opsInBatch++;
+            
+            // Создаём запись студента
+            const studentRef = doc(collection(db, 'students'));
+            batch.set(studentRef, {
+                user_id: userRef.id,
+                group_id: groupId,
+                student_card: String(s.student_card || ''),
+                phone: s.phone || '',
+                birth_date: s.birth_date || null,
+                enrollment_date: s.enrollment_date || '',
+                imported: true,
+                created_at: Timestamp.now()
+            });
+            opsInBatch++;
+            
+            if (s.student_card) existingCards.add(String(s.student_card));
+            added++;
+            
+            // Коммитим пакет при достижении лимита
+            if (opsInBatch >= 400) await commitBatch();
+            
+            if (onProgress && processed % 25 === 0) onProgress(processed, total, added, skipped);
+        }
+        
+        await commitBatch();
+        if (onProgress) onProgress(total, total, added, skipped);
+        
+        return { added, skipped, total };
     }
 };
 
