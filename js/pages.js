@@ -178,7 +178,7 @@ export const Pages = {
                             <div>
                                 <div class="lesson-info-title">${UI.escapeHtml(l.subject_name)}</div>
                                 <div class="lesson-info-meta">
-                                    ${UI.escapeHtml(l.group_name)} · ${UI.escapeHtml(l.teacher_name)}
+                                    ${l.start_time ? `<strong style="color:var(--brand-600)">${UI.escapeHtml(l.start_time)}–${UI.escapeHtml(l.end_time || '')}</strong> · ` : ''}${UI.escapeHtml(l.group_name)} · ${UI.escapeHtml(l.teacher_name)}
                                 </div>
                             </div>
                             <div class="lesson-classroom">каб. ${UI.escapeHtml(l.classroom || '—')}</div>
@@ -336,7 +336,7 @@ export const Pages = {
                             <div>
                                 <div class="lesson-info-title">${UI.escapeHtml(l.subject_name)}</div>
                                 <div class="lesson-info-meta">
-                                    ${UI.escapeHtml(l.group_name)} · ${UI.escapeHtml(l.teacher_name)}
+                                    ${l.start_time ? `<strong style="color:var(--brand-600)">${UI.escapeHtml(l.start_time)}–${UI.escapeHtml(l.end_time || '')}</strong> · ` : ''}${UI.escapeHtml(l.group_name)} · ${UI.escapeHtml(l.teacher_name)}
                                 </div>
                             </div>
                             <div class="lesson-classroom">каб. ${UI.escapeHtml(l.classroom || '—')}</div>
@@ -376,7 +376,7 @@ export const Pages = {
                         <div class="att-meta">
                             <span>${UI.icon('layers')} ${UI.escapeHtml(lesson.group_name)}</span>
                             <span>${UI.icon('calendar')} ${UI.formatDateLong(lesson.lesson_date)}</span>
-                            <span>${UI.icon('clock')} Пара ${lesson.lesson_number}</span>
+                            <span>${UI.icon('clock')} Пара ${lesson.lesson_number}${lesson.start_time ? ` (${UI.escapeHtml(lesson.start_time)}–${UI.escapeHtml(lesson.end_time || '')})` : ''}</span>
                             <span>${UI.icon('pin')} каб. ${UI.escapeHtml(lesson.classroom || '—')}</span>
                         </div>
                     </div>
@@ -498,6 +498,8 @@ export const Pages = {
 
             const monthAgo = new Date();
             monthAgo.setMonth(monthAgo.getMonth() - 1);
+            const weekAhead = new Date();
+            weekAhead.setDate(weekAhead.getDate() + 7);
 
             content.innerHTML = `
                 <div class="filters-bar">
@@ -520,7 +522,7 @@ export const Pages = {
                     </div>
                     <div class="form-group">
                         <label>По дату</label>
-                        <input type="date" id="j-to" value="${UI.todayISO()}">
+                        <input type="date" id="j-to" value="${weekAhead.toISOString().slice(0,10)}">
                     </div>
                     <button class="btn-primary" id="j-load">${UI.icon('journal')} Открыть журнал</button>
                     <button class="btn-success" id="j-save">${UI.icon('save')} Сохранить</button>
@@ -584,7 +586,7 @@ export const Pages = {
                 return `<th class="j-date">
                     <div class="j-d">${d.getDate()}</div>
                     <div class="j-m">${months[d.getMonth()] || ''}</div>
-                    <div class="j-num">${l.lesson_number || ''} пара</div>
+                    <div class="j-num">${l.start_time ? UI.escapeHtml(l.start_time) : (l.lesson_number || '') + ' пара'}</div>
                 </th>`;
             }).join('');
 
@@ -1497,9 +1499,25 @@ export const Pages = {
     async import() {
         const content = document.getElementById('page-content');
         content.innerHTML = `
+            <div class="card" style="margin-bottom:20px; border:1px solid var(--brand-100); background:var(--brand-grad-soft);">
+                <div style="display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap;">
+                    <div class="stat-icon" style="background:#fff;">${UI.icon('journal')}</div>
+                    <div style="flex:1; min-width:240px;">
+                        <h4 style="margin-bottom:6px;">Демо-данные: группа 408 ПО</h4>
+                        <p style="color:var(--text-2); font-size:14px; margin-bottom:14px;">
+                            Загрузит реальное расписание 4 курса «Программное обеспечение» (2-семестр 2025–2026):
+                            группу <b>408 ПО</b>, 5 модулей, преподавателей и занятия на текущую неделю (Пн–Пт).
+                            Повторный запуск не создаёт дубликатов.
+                        </p>
+                        <button class="btn-primary" id="seed-408-btn">${UI.icon('download')} Загрузить расписание 408 ПО</button>
+                        <div id="seed-408-status" style="margin-top:12px; font-size:14px; color:var(--text-2);"></div>
+                    </div>
+                </div>
+            </div>
+
             <div class="info-note">
                 ${UI.icon('info')}
-                <div>Загрузите файл «Контингент» (.xls/.xlsx), выгруженный из НОБД.
+                <div>Либо загрузите файл «Контингент» (.xls/.xlsx), выгруженный из НОБД.
                 Система автоматически создаст группы и добавит студентов.
                 Повторная загрузка не создаёт дубликатов (проверка по номеру студбилета).</div>
             </div>
@@ -1516,6 +1534,31 @@ export const Pages = {
         `;
         
         document.getElementById('import-file').onchange = (e) => this.handleImportFile(e);
+        document.getElementById('seed-408-btn').onclick = () => this.seed408();
+    },
+
+    async seed408() {
+        const btn = document.getElementById('seed-408-btn');
+        const status = document.getElementById('seed-408-status');
+        btn.disabled = true;
+        const original = btn.innerHTML;
+        btn.innerHTML = 'Загрузка…';
+
+        try {
+            const result = await API.seedDemo408((msg) => { status.textContent = msg; });
+            status.innerHTML = `<strong style="color:var(--success)">Готово!</strong> Создано занятий: ${result.created}. 
+                Неделя: ${UI.formatDate(result.weekStart)} — ${UI.formatDate(result.weekEnd)}.
+                Откройте «Расписание» или «Электронный журнал».`;
+            UI.success('Группа 408 ПО загружена');
+            btn.innerHTML = 'Загрузить повторно';
+            btn.disabled = false;
+        } catch (e) {
+            status.innerHTML = `<strong style="color:var(--danger)">Ошибка:</strong> ${UI.escapeHtml(e.message)}`;
+            UI.error(e.message);
+            btn.innerHTML = original;
+            btn.disabled = false;
+            console.error(e);
+        }
     },
     
     async handleImportFile(e) {

@@ -743,6 +743,140 @@ export const API = {
         if (onProgress) onProgress(total, total, added, skipped);
         
         return { added, skipped, total };
+    },
+
+    // ================================================================
+    // ДЕМО-ДАННЫЕ: реальное расписание группы 408 ПО
+    // (перенесено с расписания, 2-семестр 2025–2026)
+    // ================================================================
+    DEMO_408: {
+        group: { name: '408 ПО', specialty: 'Программное обеспечение', course: 4 },
+        subjects: [
+            { code: 'ПМ 11', name: 'ПМ 11. Планирование и управление ресурсами облака и обслуживание облачной инфраструктуры' },
+            { code: 'ПМ 12', name: 'ПМ 12. Техническая поддержка и сопровождение автоматизированной информационной системы' },
+            { code: 'ПМ 13', name: 'ПМ 13. Обеспечение информационной безопасности организаций' },
+            { code: 'БМ 01', name: 'БМ 01. Развитие и совершенствование физических качеств' },
+            { code: 'БМ 04', name: 'БМ 04. Применение основ социальных наук для социализации и адаптации в обществе и в трудовом коллективе' },
+        ],
+        teachers: ['Жамалов Г.', 'Марат Г.М.', 'Нурдинова А.А.', 'Рахметова С.Т.', 'Сайдинов Е.Е.'],
+        times: { 3: ['11:25', '12:55'], 4: ['13:35', '15:05'], 5: ['15:15', '16:45'], 6: ['17:00', '18:30'] },
+        // [день недели 1=Пн..5=Пт, № пары, код предмета, преподаватель, аудитория]
+        lessons: [
+            [1, 3, 'ПМ 12', 'Жамалов Г.', '301'],
+            [1, 4, 'ПМ 11', 'Марат Г.М.', '208'],
+            [1, 5, 'ПМ 12', 'Марат Г.М.', '301'],
+            [1, 6, 'ПМ 12', 'Жамалов Г.', '301'],
+            [2, 3, 'ПМ 12', 'Жамалов Г.', '301'],
+            [2, 4, 'БМ 01', 'Нурдинова А.А.', 'с/з №2'],
+            [2, 5, 'БМ 04', 'Нурдинова А.А.', '401'],
+            [2, 6, 'БМ 04', 'Жамалов Г.', '301'],
+            [3, 3, 'ПМ 11', 'Марат Г.М.', '301'],
+            [3, 4, 'ПМ 11', 'Марат Г.М.', '208'],
+            [3, 5, 'ПМ 12', 'Жамалов Г.', '301'],
+            [3, 6, 'ПМ 12', 'Жамалов Г.', '301'],
+            [4, 3, 'ПМ 12', 'Жамалов Г.', '306'],
+            [4, 4, 'ПМ 12', 'Жамалов Г.', '401'],
+            [4, 5, 'ПМ 12', 'Марат Г.М.', '402'],
+            [4, 6, 'ПМ 12', 'Марат Г.М.', '402'],
+            [5, 3, 'ПМ 12', 'Рахметова С.Т.', '301'],
+            [5, 4, 'ПМ 12', 'Жамалов Г.', '301'],
+            [5, 5, 'БМ 01', 'Жамалов Г.', '208'],
+        ],
+    },
+
+    _mondayOfCurrentWeek() {
+        const d = new Date();
+        const day = d.getDay(); // 0=Вс..6=Сб
+        const diff = (day === 0 ? -6 : 1 - day);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() + diff);
+        return d;
+    },
+    _addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n); return d; },
+    _isoDate(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    },
+
+    // Загрузка демо-группы 408 ПО (идемпотентно — без дублей)
+    async seedDemo408(onProgress) {
+        const D = this.DEMO_408;
+        const log = (m) => onProgress && onProgress(m);
+
+        // 1. Группа
+        log('Создание группы 408 ПО…');
+        const groupsMap = await this.getGroupsMap();
+        let groupId = groupsMap[D.group.name];
+        if (!groupId) {
+            const ref = await addDoc(collection(db, 'groups'), {
+                name: D.group.name, specialty: D.group.specialty,
+                course: Number(D.group.course), created_at: Timestamp.now()
+            });
+            groupId = ref.id;
+        }
+
+        // 2. Предметы (по коду)
+        log('Добавление предметов (модулей)…');
+        const subjSnap = await getDocs(collection(db, 'subjects'));
+        const subjByCode = {};
+        subjSnap.docs.forEach(d => { const c = d.data().code; if (c) subjByCode[c] = d.id; });
+        for (const s of D.subjects) {
+            if (!subjByCode[s.code]) {
+                const ref = await addDoc(collection(db, 'subjects'), {
+                    name: s.name, code: s.code, hours_total: 0, created_at: Timestamp.now()
+                });
+                subjByCode[s.code] = ref.id;
+            }
+        }
+
+        // 3. Преподаватели (профили без Auth, как при импорте)
+        log('Добавление преподавателей…');
+        const usersSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'teacher')));
+        const teacherByName = {};
+        usersSnap.docs.forEach(d => { teacherByName[d.data().full_name] = d.id; });
+        for (const name of D.teachers) {
+            if (!teacherByName[name]) {
+                const ref = await addDoc(collection(db, 'users'), {
+                    full_name: name, email: '', role: 'teacher',
+                    is_active: true, imported: true, created_at: Timestamp.now()
+                });
+                teacherByName[name] = ref.id;
+            }
+        }
+
+        // 4. Расписание на текущую неделю (Пн–Пт)
+        log('Создание расписания на текущую неделю…');
+        const monday = this._mondayOfCurrentWeek();
+        const schedSnap = await getDocs(query(collection(db, 'schedule'), where('group_id', '==', groupId)));
+        const existingKeys = new Set();
+        schedSnap.docs.forEach(d => { const x = d.data(); existingKeys.add(`${x.lesson_date}|${x.lesson_number}`); });
+
+        let created = 0;
+        for (const [wd, pair, code, teacher, room] of D.lessons) {
+            const date = this._isoDate(this._addDays(monday, wd - 1));
+            const key = `${date}|${pair}`;
+            if (existingKeys.has(key)) continue;
+            const [st, en] = D.times[pair] || ['', ''];
+            await addDoc(collection(db, 'schedule'), {
+                group_id: groupId,
+                subject_id: subjByCode[code] || null,
+                teacher_id: teacherByName[teacher] || null,
+                lesson_date: date,
+                lesson_number: pair,
+                classroom: room,
+                start_time: st,
+                end_time: en,
+                created_at: Timestamp.now()
+            });
+            existingKeys.add(key);
+            created++;
+        }
+
+        const weekStart = this._isoDate(monday);
+        const weekEnd = this._isoDate(this._addDays(monday, 4));
+        return { groupId, created, weekStart, weekEnd };
     }
 };
 
