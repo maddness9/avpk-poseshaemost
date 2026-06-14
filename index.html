@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>АВПК — Система учёта посещаемости</title>
+    <title>АВПК — Платформа учёта посещаемости</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -16,12 +16,12 @@
 <!-- ЭКРАН ВХОДА                                     -->
 <!-- =============================================== -->
 <div id="login-screen" class="login-screen">
-    <div class="login-bg-pattern"></div>
-    
     <div class="login-side">
         <div class="login-side-content">
             <div class="college-emblem">
-                <img src="assets/logo.png" alt="Логотип АВПК" class="college-logo-img">
+                <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 4L2 9l10 5 10-5-10-5z"/><path d="M5 11.4V16c0 1.5 3.1 3 7 3s7-1.5 7-3v-4.6"/><path d="M22 9v5.4"/>
+                </svg>
             </div>
             <h1 class="college-name">
                 Актюбинский<br>
@@ -29,30 +29,39 @@
                 колледж
             </h1>
             <p class="college-tagline">
-                Автоматизированная система<br>учёта посещаемости занятий
+                Единая цифровая платформа учёта посещаемости,<br>расписания и успеваемости
             </p>
             <div class="college-features">
                 <div class="feature-item">
-                    <span class="feature-bullet">▸</span> Электронный журнал посещаемости
+                    <span class="feature-bullet"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2.2"/><path d="M9 3v18M4 9h16M4 15h5"/></svg></span>
+                    Электронный журнал посещаемости
                 </div>
                 <div class="feature-item">
-                    <span class="feature-bullet">▸</span> Управление расписанием
+                    <span class="feature-bullet"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18"/><path d="M8 2.5v4M16 2.5v4"/></svg></span>
+                    Расписание занятий онлайн
                 </div>
                 <div class="feature-item">
-                    <span class="feature-bullet">▸</span> Отчёты и статистика по группам
+                    <span class="feature-bullet"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18"/><rect x="5" y="11" width="3.4" height="7" rx="1"/><rect x="10.3" y="5.5" width="3.4" height="12.5" rx="1"/><rect x="15.6" y="13.5" width="3.4" height="4.5" rx="1"/></svg></span>
+                    Отчёты и статистика по группам
                 </div>
                 <div class="feature-item">
-                    <span class="feature-bullet">▸</span> Облачное хранилище данных
+                    <span class="feature-bullet"><svg class="ico" viewBox="0 0 24 24"><path d="M12 4L2 9l10 5 10-5-10-5z"/><path d="M5 11.4V16c0 1.5 3.1 3 7 3s7-1.5 7-3v-4.6"/></svg></span>
+                    Доступ для студентов и преподавателей
                 </div>
             </div>
         </div>
     </div>
-    
+
     <div class="login-form-side">
         <div class="login-card">
+            <div class="login-card-logo">
+                <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 4L2 9l10 5 10-5-10-5z"/><path d="M5 11.4V16c0 1.5 3.1 3 7 3s7-1.5 7-3v-4.6"/><path d="M22 9v5.4"/>
+                </svg>
+            </div>
             <h2 class="login-title">Вход в систему</h2>
-            <p class="login-subtitle">Введите учётные данные для входа</p>
-            
+            <p class="login-subtitle">Введите учётные данные для входа в платформу</p>
+
             <form id="login-form" class="login-form">
                 <div class="form-group">
                     <label for="email">Email</label>
@@ -63,19 +72,17 @@
                     <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="••••••••">
                 </div>
                 <div id="login-error" class="error-message"></div>
-                <button type="submit" class="btn-primary btn-large" id="login-btn">
+                <button type="submit" class="btn-primary btn-large btn-block" id="login-btn">
                     Войти
                 </button>
             </form>
-            
-            <div class="login-separator">
-                <span>или</span>
-            </div>
-            
+
+            <div class="login-separator"><span>или</span></div>
+
             <button class="btn-secondary btn-large btn-block" id="show-register">
-                Зарегистрироваться
+                Создать аккаунт
             </button>
-            
+
             <div class="login-footer">
                 <small>© 2025 АВПК · Дипломный проект</small>
             </div>
@@ -87,14 +94,19 @@
 <!-- ЭКРАН РЕГИСТРАЦИИ                                -->
 <!-- =============================================== -->
 <div id="register-screen" class="login-screen hidden">
-    <div class="login-bg-pattern"></div>
-    
     <div class="login-form-side login-form-side-full">
         <div class="login-card login-card-wide">
-            <button class="back-btn" id="back-to-login">← Назад</button>
+            <button class="back-btn" id="back-to-login">
+                <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></svg> Назад
+            </button>
+            <div class="login-card-logo">
+                <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 4L2 9l10 5 10-5-10-5z"/><path d="M5 11.4V16c0 1.5 3.1 3 7 3s7-1.5 7-3v-4.6"/><path d="M22 9v5.4"/>
+                </svg>
+            </div>
             <h2 class="login-title">Регистрация</h2>
             <p class="login-subtitle">Создание новой учётной записи</p>
-            
+
             <form id="register-form" class="login-form">
                 <div class="form-group">
                     <label for="reg-fullname">ФИО</label>
@@ -129,48 +141,61 @@
 <!-- ОСНОВНОЙ ИНТЕРФЕЙС                              -->
 <!-- =============================================== -->
 <div id="app" class="app hidden">
-    <!-- Затемнение фона при открытом меню на мобильных -->
     <div id="sidebar-overlay" class="sidebar-overlay"></div>
-    <!-- Боковое меню -->
+
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
-            <img src="assets/logo.png" alt="АВПК" class="sidebar-logo-img">
+            <div class="sidebar-logo-img brand-chip">
+                <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 4L2 9l10 5 10-5-10-5z"/><path d="M5 11.4V16c0 1.5 3.1 3 7 3s7-1.5 7-3v-4.6"/><path d="M22 9v5.4"/>
+                </svg>
+            </div>
             <div>
                 <div class="brand-title">АВПК</div>
                 <div class="brand-sub">Учёт посещаемости</div>
             </div>
         </div>
-        
+
         <nav class="sidebar-nav">
+            <div class="nav-section-label">Обзор</div>
             <a href="#" class="nav-item active" data-page="dashboard">
-                <span class="nav-icon">▦</span> Главная
+                <span class="nav-icon"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></svg></span> Главная
             </a>
             <a href="#" class="nav-item" data-page="schedule">
-                <span class="nav-icon">▤</span> Расписание
+                <span class="nav-icon"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18"/><path d="M8 2.5v4M16 2.5v4"/></svg></span> Расписание
             </a>
+
+            <div class="nav-section-label">Журнал</div>
             <a href="#" class="nav-item" data-page="attendance">
-                <span class="nav-icon">✓</span> Посещаемость
+                <span class="nav-icon"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.4 12.3l2.4 2.4 4.8-5.2"/></svg></span> Посещаемость
             </a>
+            <a href="#" class="nav-item" data-page="journal" data-role="admin,teacher">
+                <span class="nav-icon"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2.2"/><path d="M9 3v18M4 9h16M4 15h5"/></svg></span> Электронный журнал
+            </a>
+
+            <div class="nav-section-label" data-role="admin,teacher">Управление</div>
             <a href="#" class="nav-item" data-page="students" data-role="admin,teacher">
-                <span class="nav-icon">⚇</span> Студенты
+                <span class="nav-icon"><svg class="ico" viewBox="0 0 24 24"><path d="M16 19v-1.4a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V19"/><circle cx="9" cy="7" r="3.3"/><path d="M22 19v-1.4a4 4 0 0 0-3-3.86"/><path d="M16 4.13a3.3 3.3 0 0 1 0 6.4"/></svg></span> Студенты
             </a>
             <a href="#" class="nav-item" data-page="groups" data-role="admin,teacher">
-                <span class="nav-icon">▥</span> Группы
+                <span class="nav-icon"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3l9 4.8-9 4.8-9-4.8 9-4.8z"/><path d="M3 12.5l9 4.8 9-4.8"/></svg></span> Группы
             </a>
             <a href="#" class="nav-item" data-page="teachers" data-role="admin">
-                <span class="nav-icon">⚐</span> Преподаватели
+                <span class="nav-icon"><svg class="ico" viewBox="0 0 24 24"><circle cx="9.5" cy="7" r="3.4"/><path d="M2.8 20v-1a5 5 0 0 1 5-5h2.4a5 5 0 0 1 3.6 1.5"/><path d="M15.5 16.5l2 2 4-4.2"/></svg></span> Преподаватели
             </a>
             <a href="#" class="nav-item" data-page="subjects" data-role="admin">
-                <span class="nav-icon">▣</span> Предметы
+                <span class="nav-icon"><svg class="ico" viewBox="0 0 24 24"><path d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-3.9-7 3.9V4.5a1 1 0 0 1 1-1z"/></svg></span> Предметы
             </a>
             <a href="#" class="nav-item" data-page="import" data-role="admin">
-                <span class="nav-icon">⭳</span> Импорт
+                <span class="nav-icon"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M4 20h16"/></svg></span> Импорт
             </a>
+
+            <div class="nav-section-label">Аналитика</div>
             <a href="#" class="nav-item" data-page="reports">
-                <span class="nav-icon">◷</span> Отчёты
+                <span class="nav-icon"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18"/><rect x="5" y="11" width="3.4" height="7" rx="1"/><rect x="10.3" y="5.5" width="3.4" height="12.5" rx="1"/><rect x="15.6" y="13.5" width="3.4" height="4.5" rx="1"/></svg></span> Отчёты
             </a>
         </nav>
-        
+
         <div class="sidebar-footer">
             <div class="user-info">
                 <div class="user-avatar" id="user-avatar">?</div>
@@ -179,10 +204,13 @@
                     <div class="user-role" id="user-role">—</div>
                 </div>
             </div>
-            <button id="logout-btn" class="btn-ghost">Выйти из системы</button>
+            <button id="logout-btn" class="btn-ghost">
+                <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16.5l4.5-4.5L10 7.5"/><path d="M14.5 12H3.5"/></svg>
+                Выйти из системы
+            </button>
         </div>
     </aside>
-    
+
     <!-- Основная область контента -->
     <main class="main-content">
         <header class="main-header">
@@ -195,8 +223,14 @@
                     <div class="header-meta" id="current-date"></div>
                 </div>
             </div>
+            <div class="header-right">
+                <div class="header-chip" id="header-date-chip">
+                    <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.2v5l3.4 2"/></svg>
+                    <span id="header-clock">—</span>
+                </div>
+            </div>
         </header>
-        
+
         <div id="page-content" class="page-content">
             <!-- Контент страниц вставляется динамически через JS -->
         </div>

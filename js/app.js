@@ -14,6 +14,7 @@ const App = {
         dashboard: 'Главная',
         schedule: 'Расписание',
         attendance: 'Посещаемость',
+        journal: 'Электронный журнал',
         students: 'Студенты',
         groups: 'Группы',
         teachers: 'Преподаватели',
@@ -32,6 +33,9 @@ const App = {
         // Текущая дата в шапке
         const dateEl = document.getElementById('current-date');
         if (dateEl) dateEl.textContent = UI.formatDateLong(UI.todayISO());
+
+        // Живые часы в правой части шапки
+        this.startClock();
         
         // События формы входа
         document.getElementById('login-form').onsubmit = (e) => this.handleLogin(e);
@@ -125,8 +129,8 @@ const App = {
         document.getElementById('user-role').textContent = this.roleNames[this.currentUser.role] || this.currentUser.role;
         document.getElementById('user-avatar').textContent = UI.avatarLetters(this.currentUser.full_name);
         
-        // Скрываем недоступные пункты меню
-        document.querySelectorAll('.nav-item[data-role]').forEach(item => {
+        // Скрываем недоступные пункты меню и заголовки секций
+        document.querySelectorAll('.sidebar [data-role]').forEach(item => {
             const allowed = item.dataset.role.split(',');
             item.style.display = allowed.includes(this.currentUser.role) ? '' : 'none';
         });
@@ -148,6 +152,21 @@ const App = {
         this.navigate('dashboard');
     },
     
+    // ----- ЧАСЫ В ШАПКЕ -----
+    startClock() {
+        const el = document.getElementById('header-clock');
+        if (!el) return;
+        const tick = () => {
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            el.textContent = `${hh}:${mm}`;
+        };
+        tick();
+        clearInterval(this._clockTimer);
+        this._clockTimer = setInterval(tick, 30000);
+    },
+
     // ----- МОБИЛЬНОЕ МЕНЮ -----
     initMobileMenu() {
         const sidebar = document.getElementById('sidebar');

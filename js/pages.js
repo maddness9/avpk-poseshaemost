@@ -18,85 +18,64 @@ export const Pages = {
             
             const statusDist = stats.status_distribution || {};
             const total = Object.values(statusDist).reduce((a, b) => a + b, 0) || 1;
-            
+            const totalMarks = Object.values(statusDist).reduce((a, b) => a + b, 0);
+            const rate = stats.attendance_rate;
+            const rColor = rate >= 85 ? 'var(--success)' : rate >= 70 ? 'var(--warning)' : 'var(--danger)';
+
+            const statCard = (icon, label, value, suffix = '', cls = '') => `
+                <div class="stat-card ${cls}">
+                    <div class="stat-icon">${UI.icon(icon)}</div>
+                    <div class="stat-body">
+                        <div class="stat-label">${label}</div>
+                        <div class="stat-value">${value}${suffix ? `<span class="stat-suffix">${suffix}</span>` : ''}</div>
+                    </div>
+                </div>`;
+
             content.innerHTML = `
                 <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-label">Студенты</div>
-                        <div class="stat-value">${stats.total_students}</div>
-                    </div>
-                    <div class="stat-card info">
-                        <div class="stat-label">Группы</div>
-                        <div class="stat-value">${stats.total_groups}</div>
-                    </div>
-                    <div class="stat-card warning">
-                        <div class="stat-label">Преподаватели</div>
-                        <div class="stat-value">${stats.total_teachers}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Предметы</div>
-                        <div class="stat-value">${stats.total_subjects}</div>
-                    </div>
-                    <div class="stat-card success">
-                        <div class="stat-label">Занятий сегодня</div>
-                        <div class="stat-value">${stats.today_lessons}</div>
-                    </div>
-                    <div class="stat-card ${stats.attendance_rate >= 85 ? 'success' : stats.attendance_rate >= 70 ? 'warning' : 'danger'}">
-                        <div class="stat-label">Посещаемость</div>
-                        <div class="stat-value">${stats.attendance_rate}<span class="stat-suffix">%</span></div>
-                    </div>
+                    ${statCard('users', 'Студенты', stats.total_students)}
+                    ${statCard('layers', 'Группы', stats.total_groups, '', 'info')}
+                    ${statCard('teacher', 'Преподаватели', stats.total_teachers, '', 'warning')}
+                    ${statCard('subjects', 'Предметы', stats.total_subjects)}
+                    ${statCard('calendar', 'Занятий сегодня', stats.today_lessons, '', 'success')}
+                    ${statCard('percent', 'Посещаемость', rate, '%', rate >= 85 ? 'success' : rate >= 70 ? 'warning' : 'danger')}
                 </div>
                 
                 <div class="dashboard-grid">
                     <div class="card chart-card">
-                        <h4>Распределение статусов посещаемости</h4>
-                        <div class="status-distribution">
-                            <div class="status-dist-item present">
-                                <div class="status-dist-label">Присутствовали</div>
-                                <div class="status-dist-value">${statusDist.present || 0}</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width:${(statusDist.present||0)/total*100}%; background: var(--success)"></div>
+                        <h4>Общая посещаемость</h4>
+                        <div class="chart-sub">По всем отмеченным занятиям${totalMarks ? ` · всего отметок: ${totalMarks}` : ''}</div>
+                        <div class="attendance-ring-wrap">
+                            <div class="attendance-ring" style="background: conic-gradient(${rColor} ${rate * 3.6}deg, var(--surface-3) 0);">
+                                <div class="ring-label">
+                                    <div class="ring-value" style="color:${rColor}">${rate}%</div>
+                                    <div class="ring-text">посещ.</div>
                                 </div>
                             </div>
-                            <div class="status-dist-item absent">
-                                <div class="status-dist-label">Отсутствовали</div>
-                                <div class="status-dist-value">${statusDist.absent || 0}</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width:${(statusDist.absent||0)/total*100}%; background: var(--danger)"></div>
-                                </div>
-                            </div>
-                            <div class="status-dist-item late">
-                                <div class="status-dist-label">Опоздания</div>
-                                <div class="status-dist-value">${statusDist.late || 0}</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width:${(statusDist.late||0)/total*100}%; background: var(--warning)"></div>
-                                </div>
-                            </div>
-                            <div class="status-dist-item excused">
-                                <div class="status-dist-label">Уваж. причина</div>
-                                <div class="status-dist-value">${statusDist.excused || 0}</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width:${(statusDist.excused||0)/total*100}%; background: var(--info)"></div>
-                                </div>
+                            <div class="ring-legend">
+                                <div class="ring-legend-item"><span class="ring-dot" style="background:var(--success)"></span> Присутствовали <b>${statusDist.present || 0}</b></div>
+                                <div class="ring-legend-item"><span class="ring-dot" style="background:var(--warning)"></span> Опоздания <b>${statusDist.late || 0}</b></div>
+                                <div class="ring-legend-item"><span class="ring-dot" style="background:var(--info)"></span> Уваж. причина <b>${statusDist.excused || 0}</b></div>
+                                <div class="ring-legend-item"><span class="ring-dot" style="background:var(--danger)"></span> Пропуски <b>${statusDist.absent || 0}</b></div>
                             </div>
                         </div>
                     </div>
                     
                     <div class="card chart-card">
                         <h4>Топ групп по посещаемости</h4>
+                        <div class="chart-sub">Рейтинг учебных групп</div>
                         <div class="top-groups-list">
                             ${(stats.top_groups || []).length ? stats.top_groups.map((g, i) => `
                                 <div class="top-group-item">
                                     <div class="top-group-rank">${i+1}</div>
                                     <div class="top-group-info">
-                                        <div class="top-group-name">${UI.escapeHtml(g.name)}</div>
-                                        <div class="top-group-rate">${g.rate || 0}%</div>
+                                        <div class="top-group-name"><span>${UI.escapeHtml(g.name)}</span><span class="top-group-rate">${g.rate || 0}%</span></div>
                                         <div class="progress-bar">
                                             <div class="progress-fill" style="width:${g.rate||0}%"></div>
                                         </div>
                                     </div>
                                 </div>
-                            `).join('') : UI.emptyState('Нет данных', 'Пока нет статистики по группам')}
+                            `).join('') : UI.emptyState('Нет данных', 'Пока нет статистики по группам', 'chart')}
                         </div>
                     </div>
                 </div>
@@ -132,7 +111,7 @@ export const Pages = {
                 </div>
                 <button class="btn-primary" id="load-schedule-btn">Показать</button>
                 ${App.hasRole('admin', 'teacher') ? 
-                    `<button class="btn-secondary" id="add-schedule-btn">+ Добавить</button>` : ''}
+                    `<button class="btn-primary" id="add-schedule-btn">${UI.icon('plus')} Добавить занятие</button>` : ''}
             </div>
             <div id="schedule-list">${UI.loader()}</div>
         `;
@@ -170,7 +149,7 @@ export const Pages = {
             const lessons = await API.getSchedule(filters);
             
             if (!lessons.length) {
-                listEl.innerHTML = UI.emptyState('Нет занятий', 'В выбранный период занятий не запланировано', '▤');
+                listEl.innerHTML = UI.emptyState('Нет занятий', 'В выбранный период занятий не запланировано', 'calendar');
                 return;
             }
             
@@ -341,7 +320,7 @@ export const Pages = {
             const lessons = await API.getSchedule({ date_from: date, date_to: date });
             
             if (!lessons.length) {
-                listEl.innerHTML = UI.emptyState('Нет занятий', 'На эту дату не запланировано занятий', '✓');
+                listEl.innerHTML = UI.emptyState('Нет занятий', 'На эту дату не запланировано занятий', 'calendar');
                 return;
             }
             
@@ -391,29 +370,25 @@ export const Pages = {
             });
             
             content.innerHTML = `
-                <div class="card" style="margin-bottom: 20px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-                        <div>
-                            <h3 style="font-family: var(--font-display); font-size: 24px;">
-                                ${UI.escapeHtml(lesson.subject_name)}
-                            </h3>
-                            <div style="color: var(--text-muted); margin-top: 4px;">
-                                ${UI.escapeHtml(lesson.group_name)} · 
-                                ${UI.formatDateLong(lesson.lesson_date)} · 
-                                Пара ${lesson.lesson_number} · 
-                                каб. ${UI.escapeHtml(lesson.classroom || '—')}
-                            </div>
+                <div class="attendance-toolbar">
+                    <div>
+                        <h3>${UI.escapeHtml(lesson.subject_name)}</h3>
+                        <div class="att-meta">
+                            <span>${UI.icon('layers')} ${UI.escapeHtml(lesson.group_name)}</span>
+                            <span>${UI.icon('calendar')} ${UI.formatDateLong(lesson.lesson_date)}</span>
+                            <span>${UI.icon('clock')} Пара ${lesson.lesson_number}</span>
+                            <span>${UI.icon('pin')} каб. ${UI.escapeHtml(lesson.classroom || '—')}</span>
                         </div>
-                        <div style="display:flex; gap:8px;">
-                            <button class="btn-secondary" id="back-to-schedule">← К расписанию</button>
-                            <button class="btn-success" id="save-attendance">Сохранить</button>
-                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn-ghost" id="back-to-schedule">${UI.icon('back')} К расписанию</button>
+                        <button class="btn-success" id="save-attendance">${UI.icon('save')} Сохранить</button>
                     </div>
                 </div>
                 
-                ${students.length === 0 ? UI.emptyState('В группе нет студентов', 'Добавьте студентов в группу', '⚇') : `
-                    <div style="display:flex; gap:8px; margin-bottom: 16px;">
-                        <button class="btn-secondary btn-sm" id="mark-all-present">Все присутствуют</button>
+                ${students.length === 0 ? UI.emptyState('В группе нет студентов', 'Добавьте студентов в группу', 'users') : `
+                    <div class="attendance-quick">
+                        <button class="btn-secondary btn-sm" id="mark-all-present">${UI.icon('check')} Все присутствуют</button>
                         <button class="btn-secondary btn-sm" id="mark-all-absent">Все отсутствуют</button>
                     </div>
                     
@@ -466,7 +441,6 @@ export const Pages = {
                     <button class="status-btn absent ${status==='absent'?'active':''}" 
                         data-student-id="${s.student_id}" data-status="absent">Отсут.</button>
                 </div>
-                <div></div>
             </div>
         `;
     },
@@ -505,6 +479,225 @@ export const Pages = {
     },
     
     // ================================================================
+    // ЭЛЕКТРОННЫЙ ЖУРНАЛ (аналог Платонуса)
+    // ================================================================
+    JOURNAL_CYCLE: ['absent', 'late', 'excused', 'present'],
+    JOURNAL_LABEL: { absent: 'н', late: 'оп', excused: 'ув', present: '+' },
+
+    async journal() {
+        const content = document.getElementById('page-content');
+        content.innerHTML = UI.loader();
+
+        try {
+            const [groups, subjects] = await Promise.all([API.getGroups(), API.getSubjects()]);
+
+            if (!groups.length) {
+                content.innerHTML = UI.emptyState('Нет групп', 'Создайте группы и добавьте студентов, чтобы вести журнал', 'journal');
+                return;
+            }
+
+            const monthAgo = new Date();
+            monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+            content.innerHTML = `
+                <div class="filters-bar">
+                    <div class="form-group">
+                        <label>Группа</label>
+                        <select id="j-group">
+                            ${groups.map(g => `<option value="${g.id}">${UI.escapeHtml(g.name)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Предмет</label>
+                        <select id="j-subject">
+                            <option value="">Все предметы</option>
+                            ${subjects.map(s => `<option value="${s.id}">${UI.escapeHtml(s.name)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>С даты</label>
+                        <input type="date" id="j-from" value="${monthAgo.toISOString().slice(0,10)}">
+                    </div>
+                    <div class="form-group">
+                        <label>По дату</label>
+                        <input type="date" id="j-to" value="${UI.todayISO()}">
+                    </div>
+                    <button class="btn-primary" id="j-load">${UI.icon('journal')} Открыть журнал</button>
+                    <button class="btn-success" id="j-save">${UI.icon('save')} Сохранить</button>
+                </div>
+
+                <div class="journal-legend">
+                    <span style="font-weight:700;color:var(--text)">Обозначения:</span>
+                    <span class="legend-item"><span class="legend-key present">+</span> присутствовал</span>
+                    <span class="legend-item"><span class="legend-key absent">н</span> пропуск</span>
+                    <span class="legend-item"><span class="legend-key late">оп</span> опоздал</span>
+                    <span class="legend-item"><span class="legend-key excused">ув</span> уваж. причина</span>
+                    <span style="margin-left:auto;color:var(--text-muted)">Нажимайте на ячейку, чтобы менять отметку</span>
+                </div>
+
+                <div id="journal-result"></div>
+            `;
+
+            document.getElementById('j-load').onclick = () => this.loadJournal();
+            document.getElementById('j-save').onclick = () => this.saveJournal();
+
+            this.loadJournal();
+        } catch (e) {
+            content.innerHTML = UI.emptyState('Ошибка', e.message, 'info');
+            console.error(e);
+        }
+    },
+
+    async loadJournal() {
+        const groupId = document.getElementById('j-group').value;
+        const subjectId = document.getElementById('j-subject').value;
+        const from = document.getElementById('j-from').value;
+        const to = document.getElementById('j-to').value;
+        const result = document.getElementById('journal-result');
+        result.innerHTML = UI.loader();
+
+        try {
+            const { lessons, students } = await API.getJournal(groupId, subjectId, from, to);
+
+            if (!students.length) {
+                result.innerHTML = UI.emptyState('В группе нет студентов', 'Добавьте студентов в эту группу', 'users');
+                return;
+            }
+            if (!lessons.length) {
+                result.innerHTML = UI.emptyState('Нет занятий', 'За выбранный период нет занятий. Создайте их в разделе «Расписание».', 'calendar');
+                return;
+            }
+
+            // Состояние журнала
+            const marks = {};
+            students.forEach(st => {
+                Object.entries(st.marks).forEach(([lessonId, status]) => {
+                    marks[`${st.student_id}__${lessonId}`] = status;
+                });
+            });
+            window._journal = { marks, dirty: new Set(), lessons, students };
+
+            const months = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+
+            const headCols = lessons.map(l => {
+                const d = new Date(l.lesson_date);
+                return `<th class="j-date">
+                    <div class="j-d">${d.getDate()}</div>
+                    <div class="j-m">${months[d.getMonth()] || ''}</div>
+                    <div class="j-num">${l.lesson_number || ''} пара</div>
+                </th>`;
+            }).join('');
+
+            const rows = students.map((st, idx) => {
+                const cells = lessons.map(l => {
+                    const status = marks[`${st.student_id}__${l.id}`];
+                    return `<td class="j-cell" data-student="${st.student_id}" data-lesson="${l.id}">
+                        ${this.journalMark(status)}
+                    </td>`;
+                }).join('');
+                return `<tr>
+                    <td class="j-name">
+                        <div class="j-student">
+                            <span class="num">${idx + 1}</span>
+                            <span>${UI.escapeHtml(st.full_name)}</span>
+                        </div>
+                    </td>
+                    ${cells}
+                    <td class="j-total"><span class="j-total-val ${st.absent_total ? 'has' : ''}" id="jtot-${st.student_id}">${st.absent_total || 0}</span></td>
+                </tr>`;
+            }).join('');
+
+            result.innerHTML = `
+                <div class="journal-wrap">
+                    <table class="journal-table">
+                        <thead>
+                            <tr>
+                                <th class="j-name-head">Студент</th>
+                                ${headCols}
+                                <th class="j-total-head">Σ&nbsp;н</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+
+            result.querySelectorAll('.j-cell').forEach(cell => {
+                cell.onclick = () => this.toggleJournalCell(cell);
+            });
+        } catch (e) {
+            result.innerHTML = UI.emptyState('Ошибка', e.message, 'info');
+            console.error(e);
+        }
+    },
+
+    journalMark(status) {
+        const label = this.JOURNAL_LABEL[status] || '';
+        return `<div class="j-mark ${status || ''}">${label}</div>`;
+    },
+
+    toggleJournalCell(cell) {
+        const j = window._journal;
+        if (!j) return;
+        const studentId = cell.dataset.student;
+        const lessonId = cell.dataset.lesson;
+        const key = `${studentId}__${lessonId}`;
+
+        const cur = j.marks[key];
+        let next;
+        if (!cur) next = this.JOURNAL_CYCLE[0];
+        else {
+            const i = this.JOURNAL_CYCLE.indexOf(cur);
+            next = this.JOURNAL_CYCLE[(i + 1) % this.JOURNAL_CYCLE.length];
+        }
+
+        j.marks[key] = next;
+        j.dirty.add(key);
+        cell.innerHTML = this.journalMark(next);
+
+        // Пересчёт суммы пропусков по строке
+        let absent = 0;
+        j.lessons.forEach(l => { if (j.marks[`${studentId}__${l.id}`] === 'absent') absent++; });
+        const totEl = document.getElementById(`jtot-${studentId}`);
+        if (totEl) {
+            totEl.textContent = absent;
+            totEl.classList.toggle('has', absent > 0);
+        }
+    },
+
+    async saveJournal() {
+        const j = window._journal;
+        if (!j || !j.dirty.size) { UI.warning('Нет изменений для сохранения'); return; }
+
+        // Группируем изменённые ячейки по занятию
+        const byLesson = {};
+        j.dirty.forEach(key => {
+            const [studentId, lessonId] = key.split('__');
+            if (!byLesson[lessonId]) byLesson[lessonId] = [];
+            byLesson[lessonId].push({ student_id: studentId, status: j.marks[key] });
+        });
+
+        const btn = document.getElementById('j-save');
+        btn.disabled = true;
+        const original = btn.innerHTML;
+        btn.innerHTML = 'Сохранение...';
+
+        try {
+            for (const [lessonId, records] of Object.entries(byLesson)) {
+                await API.markAttendance(lessonId, records);
+            }
+            j.dirty.clear();
+            UI.success('Журнал сохранён');
+        } catch (e) {
+            UI.error(e.message);
+            console.error(e);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    },
+
+    // ================================================================
     // СТУДЕНТЫ
     // ================================================================
     async students() {
@@ -534,10 +727,10 @@ export const Pages = {
                         </select>
                     </div>
                     ${App.hasRole('admin') ? 
-                        `<button class="btn-primary" id="add-student-btn">+ Добавить студента</button>` : ''}
+                        `<button class="btn-primary" id="add-student-btn">${UI.icon('plus')} Добавить студента</button>` : ''}
                 </div>
                 <div id="students-result">
-                    ${UI.emptyState('Выберите курс и группу', 'Студенты выбранной группы появятся здесь', '⚇')}
+                    ${UI.emptyState('Выберите курс и группу', 'Студенты выбранной группы появятся здесь', 'users')}
                 </div>
             `;
             
@@ -579,7 +772,7 @@ export const Pages = {
     async loadGroupStudents(groupId) {
         const result = document.getElementById('students-result');
         if (!groupId) {
-            result.innerHTML = UI.emptyState('Выберите группу', '', '⚇');
+            result.innerHTML = UI.emptyState('Выберите группу', '', 'users');
             return;
         }
         result.innerHTML = UI.loader();
@@ -631,7 +824,7 @@ export const Pages = {
     
     renderStudents(students) {
         if (!students.length) {
-            return `<tr><td colspan="5">${UI.emptyState('В группе нет студентов', '', '⚇')}</td></tr>`;
+            return `<tr><td colspan="5">${UI.emptyState('В группе нет студентов', '', 'users')}</td></tr>`;
         }
         return students.map(s => `
             <tr>
@@ -799,8 +992,8 @@ export const Pages = {
             if (!groups.length) {
                 content.innerHTML = `
                     ${App.hasRole('admin') ? 
-                        `<div style="margin-bottom:20px;"><button class="btn-primary" id="add-group-btn">+ Новая группа</button></div>` : ''}
-                    ${UI.emptyState('Нет групп', 'Создайте группу или импортируйте студентов', '▥')}
+                        `<div style="margin-bottom:20px;"><button class="btn-primary" id="add-group-btn">${UI.icon('plus')} Новая группа</button></div>` : ''}
+                    ${UI.emptyState('Нет групп', 'Создайте группу или импортируйте студентов', 'layers')}
                 `;
                 const addBtn = document.getElementById('add-group-btn');
                 if (addBtn) addBtn.onclick = () => this.groupModal();
@@ -818,7 +1011,7 @@ export const Pages = {
             
             let html = `
                 ${App.hasRole('admin') ? 
-                    `<div style="margin-bottom:20px;"><button class="btn-primary" id="add-group-btn">+ Новая группа</button></div>` : ''}
+                    `<div style="margin-bottom:20px;"><button class="btn-primary" id="add-group-btn">${UI.icon('plus')} Новая группа</button></div>` : ''}
             `;
             
             courses.forEach(course => {
@@ -977,11 +1170,18 @@ export const Pages = {
         content.innerHTML = UI.loader();
         try {
             const teachers = await API.getTeachers();
+            const isAdmin = App.hasRole('admin');
             content.innerHTML = `
                 <div class="info-note">
-                    ℹ Преподаватели регистрируются через форму регистрации с выбором роли «Преподаватель»
+                    ${UI.icon('info')}
+                    <div>Преподаватели регистрируются самостоятельно через форму регистрации с ролью «Преподаватель».
+                    ${isAdmin ? 'Администратор может дополнить их данные (должность, кафедра, телефон).' : ''}</div>
                 </div>
                 <div class="table-container">
+                    <div class="table-header">
+                        <h3>Преподаватели</h3>
+                        <span style="color:var(--text-muted);font-weight:600;">Всего: ${teachers.length}</span>
+                    </div>
                     <table>
                         <thead>
                             <tr>
@@ -990,6 +1190,7 @@ export const Pages = {
                                 <th>Кафедра</th>
                                 <th>Телефон</th>
                                 <th>Email</th>
+                                ${isAdmin ? '<th></th>' : ''}
                             </tr>
                         </thead>
                         <tbody>
@@ -997,7 +1198,7 @@ export const Pages = {
                                 <tr>
                                     <td>
                                         <div style="display:flex; align-items:center; gap:10px;">
-                                            <div class="user-avatar" style="width:32px;height:32px;font-size:12px;">
+                                            <div class="user-avatar" style="width:34px;height:34px;font-size:12px;">
                                                 ${UI.avatarLetters(t.full_name)}
                                             </div>
                                             <strong>${UI.escapeHtml(t.full_name)}</strong>
@@ -1007,16 +1208,64 @@ export const Pages = {
                                     <td>${UI.escapeHtml(t.department || '—')}</td>
                                     <td>${UI.escapeHtml(t.phone || '—')}</td>
                                     <td>${UI.escapeHtml(t.email || '—')}</td>
+                                    ${isAdmin ? `<td><button class="btn-secondary btn-sm" data-action="edit-teacher" data-id="${t.id}">Изменить</button></td>` : ''}
                                 </tr>
-                            `).join('') : `<tr><td colspan="5">${UI.emptyState('Нет преподавателей', 'Зарегистрируйте преподавателя через форму регистрации', '⚐')}</td></tr>`}
+                            `).join('') : `<tr><td colspan="${isAdmin ? 6 : 5}">${UI.emptyState('Нет преподавателей', 'Зарегистрируйте преподавателя через форму регистрации', 'teacher')}</td></tr>`}
                         </tbody>
                     </table>
                 </div>
             `;
+
+            window._teachersCache = teachers;
+            document.querySelectorAll('[data-action="edit-teacher"]').forEach(btn => {
+                btn.onclick = () => {
+                    const t = (window._teachersCache || []).find(x => x.id === btn.dataset.id);
+                    if (t) this.teacherModal(t);
+                };
+            });
         } catch (e) { 
-            content.innerHTML = UI.emptyState('Ошибка', e.message);
+            content.innerHTML = UI.emptyState('Ошибка', e.message, 'info');
             console.error(e);
         }
+    },
+
+    teacherModal(t) {
+        const html = `
+            <form class="modal-form" id="teacher-form">
+                <div class="form-group">
+                    <label>Преподаватель</label>
+                    <input type="text" value="${UI.escapeHtml(t.full_name)}" disabled>
+                </div>
+                <div class="form-group">
+                    <label>Должность</label>
+                    <input type="text" name="position" value="${UI.escapeHtml(t.position || '')}" placeholder="например, преподаватель спец. дисциплин">
+                </div>
+                <div class="form-group">
+                    <label>Кафедра / отделение</label>
+                    <input type="text" name="department" value="${UI.escapeHtml(t.department || '')}" placeholder="например, IT-отделение">
+                </div>
+                <div class="form-group">
+                    <label>Телефон</label>
+                    <input type="tel" name="phone" value="${UI.escapeHtml(t.phone || '')}" placeholder="+7...">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="UI.closeModal()">Отмена</button>
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                </div>
+            </form>
+        `;
+        UI.modal('Данные преподавателя', html);
+
+        document.getElementById('teacher-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            try {
+                await API.updateTeacher(t.id, data);
+                UI.success('Данные обновлены');
+                UI.closeModal();
+                this.teachers();
+            } catch (err) { UI.error(err.message); }
+        };
     },
     
     // ================================================================
@@ -1029,7 +1278,7 @@ export const Pages = {
             const subjects = await API.getSubjects();
             content.innerHTML = `
                 ${App.hasRole('admin') ? 
-                    `<div style="margin-bottom:20px;"><button class="btn-primary" id="add-subject-btn">+ Новый предмет</button></div>` : ''}
+                    `<div style="margin-bottom:20px;"><button class="btn-primary" id="add-subject-btn">${UI.icon('plus')} Новый предмет</button></div>` : ''}
                 <div class="table-container">
                     <table>
                         <thead>
@@ -1048,7 +1297,7 @@ export const Pages = {
                                         ` : ''}
                                     </td>
                                 </tr>
-                            `).join('') : `<tr><td colspan="5">${UI.emptyState('Нет предметов', 'Добавьте первый предмет', '▣')}</td></tr>`}
+                            `).join('') : `<tr><td colspan="5">${UI.emptyState('Нет предметов', 'Добавьте первый предмет', 'subjects')}</td></tr>`}
                         </tbody>
                     </table>
                 </div>
@@ -1122,7 +1371,7 @@ export const Pages = {
             const groups = await API.getGroups();
             
             if (!groups.length) {
-                content.innerHTML = UI.emptyState('Нет групп', 'Сначала создайте группы и добавьте студентов', '◷');
+                content.innerHTML = UI.emptyState('Нет групп', 'Сначала создайте группы и добавьте студентов', 'chart');
                 return;
             }
             
@@ -1249,15 +1498,16 @@ export const Pages = {
         const content = document.getElementById('page-content');
         content.innerHTML = `
             <div class="info-note">
-                ℹ Загрузите файл «Контингент» (.xls/.xlsx), выгруженный из НОБД.
+                ${UI.icon('info')}
+                <div>Загрузите файл «Контингент» (.xls/.xlsx), выгруженный из НОБД.
                 Система автоматически создаст группы и добавит студентов.
-                Повторная загрузка не создаёт дубликатов (проверка по номеру студбилета).
+                Повторная загрузка не создаёт дубликатов (проверка по номеру студбилета).</div>
             </div>
             
             <div class="card" style="margin-bottom:20px;">
                 <h4 style="margin-bottom:16px;">Шаг 1. Выберите файл</h4>
                 <input type="file" id="import-file" accept=".xls,.xlsx"
-                    style="padding:12px; border:1.5px dashed var(--border); border-radius:var(--radius-md); width:100%; cursor:pointer; background:var(--bg-primary);">
+                    style="padding:12px; border:1.5px dashed var(--border-strong); border-radius:var(--radius-md); width:100%; cursor:pointer; background:var(--surface-2);">
                 <div id="import-preview" style="margin-top:16px;"></div>
             </div>
             

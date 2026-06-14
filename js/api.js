@@ -370,6 +370,69 @@ export const API = {
         }
     },
     
+    // ---------- ЭЛЕКТРОННЫЙ ЖУРНАЛ ----------
+    // Сетка «студенты × занятия» для выбранной группы (и, опционально, предмета)
+    async getJournal(groupId, subjectId, dateFrom, dateTo) {
+        if (!groupId) throw new Error('Не выбрана группа');
+
+        // 1. Занятия группы за период (фильтрация в браузере, без индексов)
+        const schedSnap = await getDocs(query(
+            collection(db, 'schedule'), where('group_id', '==', groupId)
+        ));
+        const subjectCache = {};
+        let lessons = [];
+        for (const d of schedSnap.docs) {
+            const l = { id: d.id, ...d.data() };
+            if (subjectId && l.subject_id !== subjectId) continue;
+            if (dateFrom && l.lesson_date < dateFrom) continue;
+            if (dateTo && l.lesson_date > dateTo) continue;
+            if (l.subject_id) {
+                if (!(l.subject_id in subjectCache)) {
+                    const ss = await getDoc(doc(db, 'subjects', l.subject_id));
+                    subjectCache[l.subject_id] = ss.exists() ? ss.data().name : '—';
+                }
+                l.subject_name = subjectCache[l.subject_id];
+            }
+            lessons.push(l);
+        }
+        lessons.sort((a, b) => {
+            if (a.lesson_date !== b.lesson_date) return a.lesson_date.localeCompare(b.lesson_date);
+            return (a.lesson_number || 0) - (b.lesson_number || 0);
+        });
+
+        // 2. Студенты группы
+        const studentsSnap = await getDocs(query(
+            collection(db, 'students'), where('group_id', '==', groupId)
+        ));
+        const students = [];
+        for (const sd of studentsSnap.docs) {
+            const st = { student_id: sd.id, student_card: sd.data().student_card || '', marks: {} };
+            const userSnap = await getDoc(doc(db, 'users', sd.data().user_id));
+            st.full_name = userSnap.exists() ? userSnap.data().full_name : '—';
+            students.push(st);
+        }
+        students.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+
+        // 3. Отметки по каждому занятию
+        for (const lesson of lessons) {
+            const attSnap = await getDocs(query(
+                collection(db, 'attendance'), where('schedule_id', '==', lesson.id)
+            ));
+            const byStudent = {};
+            attSnap.docs.forEach(a => { byStudent[a.data().student_id] = a.data().status; });
+            students.forEach(st => {
+                if (byStudent[st.student_id]) st.marks[lesson.id] = byStudent[st.student_id];
+            });
+        }
+
+        // 4. Итоги пропусков (н + опоздания) для каждого студента
+        students.forEach(st => {
+            st.absent_total = Object.values(st.marks).filter(s => s === 'absent').length;
+        });
+
+        return { lessons, students };
+    },
+
     // ---------- ОТЧЁТЫ И СТАТИСТИКА ----------
     
     async getDashboardStats() {
